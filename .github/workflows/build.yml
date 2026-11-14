@@ -244,7 +244,7 @@ jobs:
           sudo apt-get install -y build-essential gcc pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
 
       - name: Install nfpm
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
 
       - name: Install Wails3
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
