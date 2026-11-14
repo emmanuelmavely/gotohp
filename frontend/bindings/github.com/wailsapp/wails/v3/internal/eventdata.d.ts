@@ -17,14 +17,26 @@ declare module "@wailsio/runtime" {
             "albumComplete": core$0.AlbumStatus;
             "albumError": core$0.AlbumError;
             "albumProgress": core$0.AlbumStatus;
+            "closeChoice": string;
+            "closeRequested": void;
+            "discardUpload": void;
             "files-dropped": core$0.FilesDroppedEvent;
+            "librarySyncProgress": core$0.LibrarySyncStats;
+            "livePhotoRepairCancel": void;
+            "livePhotoRepairProgress": core$0.LivePhotoRepairProgress;
+            "resumePending": core$0.UploadJournalSummary;
+            "resumeUpload": void;
             "startUpload": core$0.StartUploadEvent;
             "uploadCancel": void;
+            "uploadDiskRead": number;
+            "uploadPaused": void;
             "uploadStart": core$0.UploadBatchStart;
             "uploadStop": void;
             "uploadTotalBytes": number;
             "uploadTotalBytesDelta": number;
             "uploadWarning": core$0.PreflightWarning;
+            "watchFilesFound": core$0.WatchFilesFoundEvent;
+            "watchSettingsChanged": void;
         }
     }
 }

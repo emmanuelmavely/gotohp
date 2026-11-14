@@ -12,6 +12,18 @@ build/android/gen/
 config.yaml
 wails_windows_amd64.syso
 .claude/settings.local.json
+# Per-machine app data. It normally lives in the system config folder, but
+# lands next to the executable (or a --config path) in local-config mode.
+gotohp.config
+stats.json
+library-index.json
+sha1.cache.json
+upload-journal.json
+.gotohp-config-*
+.stats-*
+.library-index-*
+.sha1-cache-*
+.upload-journal-*
 # Nix
 /result
 /result-*

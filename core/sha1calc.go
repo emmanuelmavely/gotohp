@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync/atomic"
 )
 
 const (
@@ -35,6 +36,21 @@ func (cw *chunkedContextWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// diskReadBytes counts every byte read from local files for uploads and
+// hashing, so the GUI can chart disk throughput separately from the network.
+var diskReadBytes atomic.Int64
+
+// addDiskRead records n bytes read from local storage.
+func addDiskRead(n int64) {
+	if n > 0 {
+		diskReadBytes.Add(n)
+	}
+}
+
+// DiskReadTotal returns the cumulative bytes read from local files since the
+// process started.
+func DiskReadTotal() int64 { return diskReadBytes.Load() }
+
 func CalculateSHA1(ctx context.Context, filePath string) ([]byte, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -47,10 +63,11 @@ func CalculateSHA1(ctx context.Context, filePath string) ([]byte, error) {
 
 	// Use a large buffer (1MB) to reduce syscall overhead
 	buf := make([]byte, copyBufferSize)
-	_, err = io.CopyBuffer(cw, file, buf)
+	n, err := io.CopyBuffer(cw, file, buf)
 	if err != nil {
 		return nil, fmt.Errorf("error calculating hash: %w", err)
 	}
+	addDiskRead(n)
 
 	return hash.Sum(nil), nil
 }

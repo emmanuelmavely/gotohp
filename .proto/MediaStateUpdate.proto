@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+// Minimal schema for the media-state mutation RPC
+// (photosdata-pa.googleapis.com/.../17490284929287180316).
+// One message covers move-to-trash (action 1, confirm 1), permanent delete
+// (action 2, confirm 2) and restore-from-trash (action 3, confirm 2).
+// Unknown fields are intentionally not modeled; proto.Unmarshal preserves
+// them for forward compatibility.
+message MediaStateUpdate {
+  // 1 = move to trash, 2 = delete permanently, 3 = restore from trash.
+  int64 action = 2;
+  repeated string dedup_keys = 3;
+  // 1 for trash, 2 for delete and restore.
+  int64 confirm = 4;
+
+  message field8_type {
+    message field4_type {
+      message field2_type {}
+      message field3_type {
+        message field1_type {}
+        field1_type field1 = 1;
+      }
+      message field4_type {}
+      message field5_type {
+        message field1_type {}
+        field1_type field1 = 1;
+      }
+
+      field2_type field2 = 2;
+      field3_type field3 = 3;
+      // field4 and field5 are sent for trash and permanent delete, but not
+      // for restore.
+      field4_type field4 = 4;
+      field5_type field5 = 5;
+    }
+    field4_type field4 = 4;
+  }
+
+  field8_type field8 = 8;
+
+  // Restore and move-to-trash report the client version here; permanent
+  // delete sends the field empty.
+  message field9_type {
+    int64 field1 = 1;
+    message field2_type {
+      int64 field1 = 1;
+      string field2 = 2;
+    }
+    field2_type field2 = 2;
+  }
+
+  field9_type field9 = 9;
+}

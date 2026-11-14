@@ -7,15 +7,27 @@ export {
 };
 
 export {
+    AccountStorage,
     AccountSummary,
     AccountsState,
     AlbumError,
     AlbumStatus,
     FileUploadResult,
     FilesDroppedEvent,
+    LibrarySyncStats,
+    LivePhotoExclusion,
+    LivePhotoRepairCandidate,
+    LivePhotoRepairOutcome,
+    LivePhotoRepairProgress,
+    LivePhotoRepairReport,
     Preferences,
     PreflightWarning,
+    QuotaSummary,
+    RemoteMediaItem,
     StartUploadEvent,
     ThreadStatus,
-    UploadBatchStart
+    UploadBatchStart,
+    UploadJournalSummary,
+    UploadStats,
+    WatchFilesFoundEvent
 } from "./models.js";

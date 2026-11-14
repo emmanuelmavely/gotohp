@@ -25,6 +25,13 @@ export function AddTokenBindingAliasFromADB(email: string): $CancellablePromise<
     return $Call.ByID(3043740547, email);
 }
 
+/**
+ * AddWatchFolder appends a folder, keeping the list free of duplicates.
+ */
+export function AddWatchFolder(folder: string): $CancellablePromise<void> {
+    return $Call.ByID(3852078787, folder);
+}
+
 export function CredentialNeedsTokenBinding(authString: string): $CancellablePromise<boolean> {
     return $Call.ByID(3401558551, authString);
 }
@@ -55,6 +62,10 @@ export function GetSettings(): $CancellablePromise<$models.Preferences> {
 
 export function RemoveCredentials(email: string): $CancellablePromise<void> {
     return $Call.ByID(741429753, email);
+}
+
+export function RemoveWatchFolder(folder: string): $CancellablePromise<void> {
+    return $Call.ByID(2156170164, folder);
 }
 
 export function SetAlbumAutoMode(autoMode: boolean): $CancellablePromise<void> {
@@ -109,6 +120,10 @@ export function SetSkipIncompleteLivePhotos(skipIncompleteLivePhotos: boolean): 
     return $Call.ByID(424242511, skipIncompleteLivePhotos);
 }
 
+export function SetStartWithWindows(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1935832154, enabled);
+}
+
 export function SetUpdateExistingPhotosToLive(updateExistingPhotosToLive: boolean): $CancellablePromise<void> {
     return $Call.ByID(3924507429, updateExistingPhotosToLive);
 }
@@ -119,6 +134,10 @@ export function SetUploadThreads(uploadThreads: number): $CancellablePromise<voi
 
 export function SetUseQuota(useQuota: boolean): $CancellablePromise<void> {
     return $Call.ByID(1540354890, useQuota);
+}
+
+export function SetWatchEnabled(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(884871839, enabled);
 }
 
 // Private type creation functions

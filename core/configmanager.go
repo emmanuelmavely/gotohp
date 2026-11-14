@@ -42,6 +42,13 @@ type Preferences struct {
 	DisableUnsupportedFilesFilter bool   `json:"disableUnsupportedFilesFilter" koanf:"disable_unsupported_files_filter"`
 	SetDateFromFilename           bool   `json:"setDateFromFilename" koanf:"set_date_from_filename"`
 	ExcludePattern                string `json:"excludePattern" koanf:"exclude_pattern"`
+	// Watch folders monitor for new media files (Dropbox-style). The upload
+	// policy for watched files is the ordinary preference set above.
+	WatchEnabled bool     `json:"watchEnabled" koanf:"watch_enabled"`
+	WatchFolders []string `json:"watchFolders" koanf:"watch_folders"`
+	// StartWithWindows registers the GUI in the user's autostart registry
+	// key (Windows only).
+	StartWithWindows bool `json:"startWithWindows" koanf:"start_with_windows"`
 	// AlbumName and AlbumAutoMode are per-session choices and are never persisted.
 	AlbumName     string `json:"albumName" koanf:"-"`
 	AlbumAutoMode bool   `json:"albumAutoMode" koanf:"-"`
@@ -112,6 +119,7 @@ var (
 	DefaultPreferences = Preferences{
 		SkipIncompleteLivePhotos: true,
 		UploadThreads:            3,
+		WatchFolders:             []string{},
 	}
 	DefaultConfig = Config{Preferences: DefaultPreferences}
 )
@@ -245,6 +253,47 @@ func (g *ConfigManager) SetExcludePattern(pattern string) {
 	updateAppConfig(func(config *Config) {
 		config.Preferences.ExcludePattern = pattern
 	})
+}
+
+func (g *ConfigManager) SetWatchEnabled(enabled bool) {
+	updateAppConfig(func(config *Config) {
+		config.Preferences.WatchEnabled = enabled
+	})
+}
+
+// AddWatchFolder appends a folder, keeping the list free of duplicates.
+func (g *ConfigManager) AddWatchFolder(folder string) {
+	folder = filepath.Clean(folder)
+	updateAppConfig(func(config *Config) {
+		for _, existing := range config.Preferences.WatchFolders {
+			if strings.EqualFold(existing, folder) {
+				return
+			}
+		}
+		config.Preferences.WatchFolders = append(config.Preferences.WatchFolders, folder)
+	})
+}
+
+func (g *ConfigManager) RemoveWatchFolder(folder string) {
+	updateAppConfig(func(config *Config) {
+		remaining := config.Preferences.WatchFolders[:0]
+		for _, existing := range config.Preferences.WatchFolders {
+			if !strings.EqualFold(existing, folder) {
+				remaining = append(remaining, existing)
+			}
+		}
+		config.Preferences.WatchFolders = remaining
+	})
+}
+
+func (g *ConfigManager) SetStartWithWindows(enabled bool) {
+	updateAppConfig(func(config *Config) {
+		config.Preferences.StartWithWindows = enabled
+	})
+	// Best effort: the preference records the intent either way.
+	if err := SetAutostart(enabled); err != nil {
+		log.Printf("gotohp: autostart update failed (enabled=%v): %v", enabled, err)
+	}
 }
 
 func (g *ConfigManager) GetExcludePattern() string {
@@ -733,6 +782,10 @@ func loadConfigLocked() error {
 	} else {
 		AppConfig = loadAppConfig()
 		_ = os.Chmod(ConfigPath, 0o600)
+	}
+	// Keep the slice non-nil so configs round-trip identically.
+	if AppConfig.Preferences.WatchFolders == nil {
+		AppConfig.Preferences.WatchFolders = []string{}
 	}
 
 	return nil

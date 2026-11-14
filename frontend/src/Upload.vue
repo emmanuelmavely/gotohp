@@ -9,6 +9,7 @@ import { uploadManager } from './utils/UploadManager'
 import { X, Check, SkipForward, Clock, Zap, Hourglass, FolderPlus, AlertTriangle, ListPlus } from '@lucide/vue'
 import { debugEnabled } from './utils/debug'
 import { baseName, formatBytes, formatDuration } from './utils/format'
+import ThroughputGraph from './components/ThroughputGraph.vue'
 
 const { state } = uploadManager
 
@@ -49,17 +50,21 @@ const speedDisplay = computed(() => {
 
 const elapsedDisplay = computed(() => formatDuration(elapsedSeconds.value))
 
-// Remaining time, estimated from the bytes left and the smoothed upload speed
-const etaDisplay = computed(() => {
-  const remaining = state.totalBytes - state.uploadedBytes
-  if (state.uploadSpeed <= 0 || state.totalBytes <= 0 || remaining <= 0) return '--'
-  return formatDuration(remaining / state.uploadSpeed)
-})
-
 // Bytes progress display
 const bytesDisplay = computed(() => {
   if (state.totalBytes === 0) return ''
-  return `${formatBytes(state.uploadedBytes)} of ${formatBytes(state.totalBytes)}`
+  let text = `${formatBytes(state.uploadedBytes)} of ${formatBytes(state.totalBytes)}`
+  if (state.dedupedBytes > 0) {
+    text += ` · ${formatBytes(state.dedupedBytes)} already in library`
+  }
+  return text
+})
+
+// Remaining time, estimated from the bytes left and the smoothed upload speed
+const etaDisplay = computed(() => {
+  const remaining = state.totalBytes - state.uploadedBytes - state.dedupedBytes
+  if (state.uploadSpeed <= 0 || state.totalBytes <= 0 || remaining <= 0) return '--'
+  return formatDuration(remaining / state.uploadSpeed)
 })
 
 // Album progress display
@@ -140,12 +145,22 @@ function warningFiles(paths: string[]): string {
             </div>
           </div>
 
+          <!-- Live throughput graph: network vs local disk read -->
+          <ThroughputGraph
+            v-if="state.speedHistory.length > 1"
+            class="mt-3"
+            :network="state.speedHistory"
+            :disk="state.diskHistory"
+          />
+
           <!-- Technical details (debug mode) -->
           <p
             v-if="debugEnabled"
             class="mt-3 border-t border-dashed pt-2 font-mono text-[10px] leading-relaxed break-words text-muted-foreground tabular-nums"
           >
             bytes={{ state.uploadedBytes }}/{{ state.totalBytes }}
+            deduped={{ state.dedupedBytes }}
+            failed={{ state.failedBytes }}
             speed={{ Math.round(state.uploadSpeed) }}B/s
             peak={{ Math.round(state.peakSpeed) }}B/s
             ok={{ state.results.success.length }}

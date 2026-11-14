@@ -20,8 +20,10 @@ func newUploadCommand() *cobra.Command {
 		Short: "Upload files or directories",
 		Long: "Upload files or directories to Google Photos.\n\n" +
 			"The config file only supplies credentials. Everything else, including the\n" +
-			"proxy and quality settings, is controlled by flags; GUI preferences do not apply.",
-		Args: cobra.MinimumNArgs(1),
+			"proxy and quality settings, is controlled by flags; GUI preferences do not apply.\n\n" +
+			"An upload interrupted by a crash or a lost connection is recorded in an\n" +
+			"upload journal; `--resume` retries exactly the files that never finished.",
+		Args: cobra.ArbitraryArgs,
 		RunE: runUploadCommand,
 	}
 	f := cmd.Flags()
@@ -44,6 +46,9 @@ func newUploadCommand() *cobra.Command {
 	f.Bool("ignore-apple-metadata", false, "match Live Photo pairs by filename stem instead of Apple metadata")
 	f.StringP("log-level", "l", "info", "log level: debug, info, warn, error")
 	f.Bool("no-tui", false, "disable the interactive progress UI")
+	f.Bool("dry-run", false, "report what would be uploaded without uploading anything")
+	f.Bool("json", false, "print machine-readable JSON (with --dry-run)")
+	f.Bool("resume", false, "resume an interrupted upload run from its journal; takes no paths")
 
 	// Accepted for compatibility; skipping incomplete pairs is already the default.
 	f.Bool("skip-incomplete-live-photos", false, "")
@@ -59,14 +64,21 @@ type uploadRunSettings struct {
 }
 
 func runUploadCommand(cmd *cobra.Command, paths []string) error {
-	for _, path := range paths {
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("invalid upload path %q: %w", path, err)
-		}
-	}
 	f := cmd.Flags()
 	if threads, _ := f.GetInt("threads"); threads < 1 {
 		return fmt.Errorf("threads must be a positive integer, got %d", threads)
+	}
+	resume, _ := f.GetBool("resume")
+	if !resume {
+		// Paths are only required for a fresh upload.
+		if len(paths) == 0 {
+			return fmt.Errorf("provide at least one path to upload")
+		}
+		for _, path := range paths {
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("invalid upload path %q: %w", path, err)
+			}
+		}
 	}
 
 	// Like rclone, the config file holds only the account; every upload option
@@ -82,7 +94,14 @@ func runUploadCommand(cmd *cobra.Command, paths []string) error {
 
 	logLevel, _ := f.GetString("log-level")
 	noTUI, _ := f.GetBool("no-tui")
-	return runUpload(paths, opts, uploadRunSettings{logLevel: logLevel, noTUI: noTUI})
+	settings := uploadRunSettings{logLevel: logLevel, noTUI: noTUI}
+	if dryRun, _ := f.GetBool("dry-run"); dryRun {
+		if resume {
+			return fmt.Errorf("--dry-run and --resume are mutually exclusive")
+		}
+		return runDryRun(paths, opts, f)
+	}
+	return runUpload(paths, opts, settings, resume)
 }
 
 // uploadOptionsFromFlags builds run options from defaults plus the parsed flags.

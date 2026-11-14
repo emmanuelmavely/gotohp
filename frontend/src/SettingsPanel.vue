@@ -1,11 +1,22 @@
 <script setup lang="ts">
 import { nextTick, ref, onMounted, watch } from 'vue'
 import { ConfigManager } from '../bindings/app/core'
+import { DialogService } from '../bindings/app/internal/gui'
+import { Events } from '@wailsio/runtime'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import Button from '@/components/ui/button/Button.vue'
 import SettingRow from '@/components/SettingRow.vue'
 import { debugEnabled } from '@/utils/debug'
 import { thumbnailsEnabled } from '@/utils/thumbnails'
+import { closeBehavior, type CloseBehavior } from '@/utils/closeBehavior'
+
+const closeOptions: { value: CloseBehavior, label: string }[] = [
+  { value: 'ask', label: 'Ask' },
+  { value: 'tray', label: 'Minimize to tray' },
+  { value: 'quit', label: 'Quit' },
+]
+import { FolderPlus, FolderX } from '@lucide/vue'
 
 import {
     NumberField,
@@ -28,6 +39,9 @@ interface Settings {
     disableUnsupportedFilesFilter: boolean
     setDateFromFilename: boolean
     uploadThreads: number
+    watchEnabled: boolean
+    watchFolders: string[]
+    startWithWindows: boolean
 }
 
 const settings = ref<Settings>({
@@ -42,9 +56,43 @@ const settings = ref<Settings>({
     deleteFromHost: false,
     disableUnsupportedFilesFilter: false,
     setDateFromFilename: false,
-    uploadThreads: 0
+    uploadThreads: 0,
+    watchEnabled: false,
+    watchFolders: [],
+    startWithWindows: false
 })
 const isHydrating = ref(true)
+const isPickingFolder = ref(false)
+
+function notifyWatchSettingsChanged() {
+    Events.Emit('watchSettingsChanged')
+}
+
+async function addWatchFolder() {
+    isPickingFolder.value = true
+    try {
+        const folder = await DialogService.PickFolder()
+        if (!folder) return
+        await ConfigManager.AddWatchFolder(folder)
+        if (!settings.value.watchFolders.includes(folder)) {
+            settings.value.watchFolders.push(folder)
+        }
+        if (!settings.value.watchEnabled) {
+            settings.value.watchEnabled = true
+        }
+        notifyWatchSettingsChanged()
+    } catch (error) {
+        console.error('Failed to pick watch folder:', error)
+    } finally {
+        isPickingFolder.value = false
+    }
+}
+
+async function removeWatchFolder(folder: string) {
+    await ConfigManager.RemoveWatchFolder(folder)
+    settings.value.watchFolders = settings.value.watchFolders.filter(f => f !== folder)
+    notifyWatchSettingsChanged()
+}
 
 onMounted(async () => {
     try {
@@ -61,7 +109,10 @@ onMounted(async () => {
             deleteFromHost: config.deleteFromHost || false,
             disableUnsupportedFilesFilter: config.disableUnsupportedFilesFilter || false,
             setDateFromFilename: config.setDateFromFilename || false,
-            uploadThreads: config.uploadThreads || 1
+            uploadThreads: config.uploadThreads || 1,
+            watchEnabled: config.watchEnabled || false,
+            watchFolders: config.watchFolders || [],
+            startWithWindows: config.startWithWindows || false
         }
     } finally {
         await nextTick()
@@ -137,6 +188,17 @@ watch(() => settings.value.uploadThreads, async (newValue) => {
     } else {
         await ConfigManager.SetUploadThreads(newValue)
     }
+})
+
+watch(() => settings.value.watchEnabled, async (newValue) => {
+    if (isHydrating.value) return
+    await ConfigManager.SetWatchEnabled(newValue)
+    notifyWatchSettingsChanged()
+})
+
+watch(() => settings.value.startWithWindows, async (newValue) => {
+    if (isHydrating.value) return
+    await ConfigManager.SetStartWithWindows(newValue)
 })
 </script>
 
@@ -322,6 +384,82 @@ watch(() => settings.value.uploadThreads, async (newValue) => {
 
     <section class="flex flex-col gap-1.5">
       <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
+        Watch folders
+      </h3>
+      <div class="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+        <SettingRow
+          control-id="watch-enabled"
+          title="Upload watch folders automatically"
+          description="New photos and videos in watched folders upload on their own, like a Dropbox sync folder."
+          config-key="watchEnabled"
+        >
+          <Switch
+            id="watch-enabled"
+            v-model="settings.watchEnabled"
+          />
+        </SettingRow>
+        <div class="flex flex-col gap-2 p-3">
+          <div
+            v-if="settings.watchFolders.length"
+            class="flex flex-col gap-1.5"
+          >
+            <div
+              v-for="folder in settings.watchFolders"
+              :key="folder"
+              class="group flex items-center gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5"
+            >
+              <span class="min-w-0 flex-1 truncate font-mono text-xs select-text">{{ folder }}</span>
+              <button
+                type="button"
+                class="shrink-0 cursor-pointer rounded p-1 text-muted-foreground select-none hover:bg-destructive/10 hover:text-destructive"
+                title="Stop watching"
+                @click="removeWatchFolder(folder)"
+              >
+                <FolderX class="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <p
+            v-else
+            class="text-xs text-muted-foreground"
+          >
+            No folders watched yet.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            class="w-full cursor-pointer select-none"
+            :disabled="isPickingFolder"
+            @click="addWatchFolder"
+          >
+            <FolderPlus class="size-3.5" />
+            {{ isPickingFolder ? 'Picking…' : 'Add folder' }}
+          </Button>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-1.5">
+      <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
+        Startup
+      </h3>
+      <div class="divide-y overflow-hidden rounded-xl border bg-card">
+        <SettingRow
+          control-id="start-with-windows"
+          title="Start with Windows"
+          description="Launch gotohp minimized to the tray when you log in. Watch folders and resume prompts keep working in the background."
+          config-key="startWithWindows"
+        >
+          <Switch
+            id="start-with-windows"
+            v-model="settings.startWithWindows"
+          />
+        </SettingRow>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-1.5">
+      <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
         Danger zone
       </h3>
       <div class="overflow-hidden rounded-xl border border-destructive/40 bg-destructive/5">
@@ -356,6 +494,37 @@ watch(() => settings.value.uploadThreads, async (newValue) => {
             v-model="thumbnailsEnabled"
           />
         </SettingRow>
+        <div class="flex flex-col gap-2 px-3 py-2.5">
+          <span class="flex flex-col gap-0.5 select-none">
+            <span
+              id="close-behavior-label"
+              class="text-sm leading-tight font-medium"
+            >When closing the window</span>
+            <span class="text-xs leading-snug text-muted-foreground">
+              In the tray, uploads and watch folders keep running. Use the tray icon to open or quit gotohp.
+            </span>
+          </span>
+          <div
+            class="grid grid-cols-3 gap-1 rounded-lg bg-muted/60 p-1"
+            role="radiogroup"
+            aria-labelledby="close-behavior-label"
+          >
+            <button
+              v-for="option in closeOptions"
+              :key="option.value"
+              type="button"
+              role="radio"
+              :aria-checked="closeBehavior === option.value"
+              class="cursor-pointer rounded-md px-2 py-1.5 text-xs font-medium transition-colors select-none"
+              :class="closeBehavior === option.value
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'"
+              @click="closeBehavior = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
         <SettingRow
           control-id="debug-mode"
           title="Debug mode"

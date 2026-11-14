@@ -5,15 +5,23 @@
 Unofficial Google Photos Desktop GUI Client
 
 - Unlimited uploads (can be disabled)
-- Drag-and-drop file upload interface
+- Drag-and-drop file upload interface, with drops queued while an upload runs
 - Credential management
-- Real-time upload progress tracking
+- Real-time upload progress: speed and disk-read graphs, time remaining, per-thread status, thumbnails in wide windows
 - Configurable upload threads
 - Individual files or directories uploads, with optional recursive scanning
-- Skips files already present in your account
+- Skips files already present in your account; re-dropped files are not hashed again
+- Resumes an interrupted upload (app closed, crash, shutdown) and pauses on network loss until the connection returns
+- Watch folders: new photos and videos upload automatically, optionally starting with Windows
+- Runs in the system tray: closing the window asks whether to keep running there or quit
+- Statistics: the storage your account really uses, all-time upload totals and a daily history
+- Live Photo repair: rejoins photos and videos that were uploaded as separate items. A pair is only offered when the photo is an HEIC original and was taken at the same moment as the video; JPEG-only names (often edits or shared copies) are skipped. Repairs run one pair at a time with live progress; it can be cancelled, and stops if the connection drops (scan again to continue)
+- Open uploaded and repaired items in Google Photos with one click (opens in the Google account your browser is signed in to)
+- Debug mode with a live event log (Settings → Advanced, or Ctrl/Cmd + Shift + D)
 - CLI mode
 - Configurable, persistent upload settings (stored in "%system config path%/gotohp/gotohp.config")  
-   You can force local config by creating empty gotohp.config next to executable.
+   You can force local config by creating empty gotohp.config next to executable.  
+   App data (hash cache, library index, upload journal, statistics) is kept in the same folder.
 
 ## [Download](https://github.com/xob0t/gotohp/releases/latest)
 
@@ -33,6 +41,19 @@ gotohp-cli creds set user@gmail.com
 
 The CLI shares the config file with the GUI, but reads only the stored credentials from it. Everything else (proxy, quality, upload behaviour) is set by flags, so a scripted run is unaffected by preferences changed in the GUI. Pass `--config <path>` to use a different config file and `--account <email>` to upload with a specific stored account.
 
+More commands:
+
+```shell
+gotohp-cli upload /path/to/photos --dry-run          # report what is already uploaded, upload nothing
+gotohp-cli upload --resume                           # continue an interrupted run from its journal
+gotohp-cli quota list                                # files that use storage quota, each file counted once
+gotohp-cli quota list --breakdown                    # totals by owner, duplicate, trash and quality
+gotohp-cli repair live-photos                        # list Live Photos uploaded as separate items
+gotohp-cli repair live-photos --execute              # rejoin them (changes your library)
+```
+
+`quota list`, `repair live-photos` and `upload --dry-run` accept `--json`. The first library scan reads the whole library and can take several minutes; later scans only fetch changes.
+
 Run `gotohp-cli help` or `gotohp-cli upload --help` for all commands and options.
 
 The GUI binary runs the same CLI when given a command, e.g. `gotohp upload ...`.
@@ -42,7 +63,7 @@ The GUI binary runs the same CLI when given a command, e.g. `gotohp upload ...`.
 ### Option 1 - Embedded setup
 
 1. Open gotohp and click **Add Google account**.
-2. Click **Open Google sign-in** and sign in with the account you want to add.
+2. Click **Open sign-in** and sign in with the account you want to add.
 3. Sign in on the Google Embedded Setup page and click **I agree**. The page may keep loading forever; this is expected.
 4. Open the browser developer tools. Under Application or Storage, open Cookies for `accounts.google.com`.
 5. Copy only the value of the `oauth_token` cookie and paste it into gotohp.

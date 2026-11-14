@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+// Minimal schema for the library sync responses returned by
+// photosdata-pa.googleapis.com/.../18047484249733410717
+// (library state, initial library pages and delta library pages share the
+// response shape). Paths not needed for quota accounting are intentionally
+// left unknown; proto.Unmarshal preserves them for forward compatibility.
+//
+// Field paths follow xob0t/gpmc gpmc/db_update_parser.py.
+message LibrarySyncResponse {
+  message field1_type {
+    // Pagination token for the current sync cycle (DELTA_RESUME /
+    // INITIAL_RESUME in the Google Photos app). Empty once all pages were
+    // fetched.
+    string resume_token = 1;
+    repeated media_item_type items = 2;
+    // Token identifying the sync context (NEXT_SYNC).
+    string sync_token = 6;
+    repeated deletion_item_type deletions = 9;
+  }
+
+  field1_type field1 = 1;
+
+  message media_item_type {
+    string media_key = 1;
+
+    message field2_type {
+      string file_name = 4;
+      int64 utc_timestamp = 7;
+      int64 size_bytes = 10;
+
+      // SHA-1 of the original upload, used to derive the dedup key.
+      message field13_type {
+        bytes field1 = 1;
+      }
+      field13_type sha1 = 13;
+
+      message field16_type {
+        int64 field3 = 3;
+      }
+      field16_type trash = 16;
+
+      int64 content_version = 26;
+
+      // 1 = self, 3 = partner, 4 = shared.
+      message field30_type {
+        int64 field1 = 1;
+      }
+      field30_type origin = 30;
+
+      // field2 = bytes of the item that count against the storage quota,
+      // field3 == 2 marks original (quota-charged) quality.
+      message field35_type {
+        int64 quota_charged_bytes = 2;
+        int64 quality = 3;
+      }
+      field35_type quality_info = 35;
+
+      // Property list; property 1 == 27 marks non-canonical duplicates of
+      // shared or partner items.
+      message field5_type {
+        int64 field1 = 1;
+      }
+      repeated field5_type field5 = 5;
+
+      // Field 21 (the dedup-key container) is intentionally not modeled:
+      // its subfield numbers vary between responses. It stays in the
+      // unknown fields and is parsed dynamically in core/librarysync.go.
+    }
+
+    field2_type field2 = 2;
+
+    message field5_type {
+      int64 field1 = 1;
+    }
+    field5_type field5 = 5;
+  }
+
+  message deletion_item_type {
+    message field1_type {
+      // 1 = media item deletion.
+      int64 field1 = 1;
+      message field2_type {
+        string field1 = 1;
+      }
+      field2_type field2 = 2;
+    }
+    field1_type field1 = 1;
+  }
+}

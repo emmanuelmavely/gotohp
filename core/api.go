@@ -434,14 +434,14 @@ func (a *Api) UploadFileWithProgress(ctx context.Context, filePath string, uploa
 			return ScottyFinalizeToken{}, fmt.Errorf("error opening file: %w", err)
 		}
 
-		// Wrap file in progress reader if callback provided
-		var reader io.Reader = file
+		// Wrap the file so every read (and retry) counts as disk activity,
+		// and progress is reported when a callback is provided.
+		reader := NewProgressReader(file, fileSize, nil)
 		if onProgress != nil {
-			reader = NewProgressReader(file, fileSize, func(bytesRead, total int64) {
+			reader.onProgress = func(bytesRead, total int64) {
 				onProgress(bytesRead, total, attemptNum)
-			})
+			}
 		}
-
 		result, err := a.doUploadRequest(ctx, uploadURL, reader)
 		closeErr := file.Close() // Close file after request completes (success or fail)
 		if err == nil && closeErr != nil {

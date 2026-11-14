@@ -34,6 +34,7 @@ func (pr *ProgressReader) Read(p []byte) (n int, err error) {
 	n, err = pr.reader.Read(p)
 	if n > 0 {
 		currentRead := pr.read.Add(int64(n))
+		addDiskRead(int64(n))
 
 		// Throttle progress updates to avoid overwhelming the event system
 		now := time.Now()

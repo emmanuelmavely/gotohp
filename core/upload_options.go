@@ -25,6 +25,10 @@ type UploadOptions struct {
 	// AlbumAutoMode is set, which creates one album per source directory.
 	AlbumName     string
 	AlbumAutoMode bool
+
+	// HashCache reuses SHA-1 digests for unchanged files across runs. It is
+	// never persisted to gotohp.config; the UploadManager owns its lifetime.
+	HashCache *HashCache `json:"-"`
 }
 
 // UploadOptions derives run options from GUI preferences.

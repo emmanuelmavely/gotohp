@@ -93,6 +93,8 @@ const uploadRows = computed<Row[]>(() => [
   ['files', `${state.uploadedFiles} / ${state.totalFiles}`],
   ['uploadedBytes', `${state.uploadedBytes} (${formatBytes(state.uploadedBytes)})`],
   ['totalBytes', `${state.totalBytes} (${formatBytes(state.totalBytes)})`],
+  ['dedupedBytes', `${state.dedupedBytes} (${formatBytes(state.dedupedBytes)})`],
+  ['failedBytes', `${state.failedBytes} (${formatBytes(state.failedBytes)})`],
   ['uploadSpeed', `${Math.round(state.uploadSpeed)} B/s (${formatBytes(state.uploadSpeed)}/s)`],
   ['peakSpeed', `${Math.round(state.peakSpeed)} B/s (${formatBytes(state.peakSpeed)}/s)`],
   ['startTime', isoOrDash(state.startTime)],

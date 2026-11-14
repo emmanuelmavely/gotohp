@@ -25,6 +25,8 @@ export interface UploadResultEvent {
   SkipReason: string
   Path: string
   Paths: string[]
+  Bytes?: number
+  Transferred?: boolean
 }
 
 export function recordUploadResult(results: UploadResults, event: UploadResultEvent): number {

@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// Request for PhotosPrepareDownload
+// (photosdata-pa.googleapis.com/$rpc/social.frontend.photos.preparedownloaddata.v1.
+// PhotosPrepareDownloadDataService/PhotosPrepareDownload).
+message PrepareDownload {
+  message field1_type {
+    message field1_type {
+      string media_key = 1;
+    }
+    field1_type field1 = 1;
+  }
+
+  field1_type field1 = 1;
+
+  message field2_type {
+    message field1_type {
+      message field7_type {
+        message field2_type {}
+        field2_type field2 = 2;
+      }
+      field7_type field7 = 7;
+    }
+    field1_type field1 = 1;
+
+    message field5_type {
+      message field2_type {}
+      message field3_type {}
+      message field5_type {
+        message field1_type {}
+        field1_type field1 = 1;
+        // Explicitly present (zero) in the request captured from the app.
+        optional int64 field3 = 3;
+      }
+      field2_type field2 = 2;
+      field3_type field3 = 3;
+      field5_type field5 = 5;
+    }
+    field5_type field5 = 5;
+  }
+
+  field2_type field2 = 2;
+}

@@ -28,6 +28,10 @@ export interface FileUploadResult {
   SkipReason: string;
   Path: string;
   Paths: string[];
+  // Total size of the item's files; 0 when unknown or already handled by a delta.
+  Bytes: number;
+  // True only when bytes actually went over the wire.
+  Transferred: boolean;
 }
 
 export interface PreflightWarning {
@@ -99,13 +103,25 @@ export interface UploadState {
   // Byte tracking
   totalBytes: number;
   uploadedBytes: number;
+  // Bytes of items that never went over the wire because they were already
+  // in the library (hash-check hits) or skipped by preflight policy.
+  dedupedBytes: number;
+  // Bytes of items that failed before transferring anything.
+  failedBytes: number;
   // Timing
   startTime: number;
   // Set when the batch stops; 0 while a batch is running
   endTime: number;
+  // Non-empty while a network pause stopped the run; auto-resumes later
+  paused: string;
   // Speed calculation (bytes per second)
   uploadSpeed: number;
   peakSpeed: number;
+  // Disk read throughput (bytes per second), sampled by the backend
+  diskSpeed: number;
+  // Throughput history for the live graphs, one sample per second
+  speedHistory: number[];
+  diskHistory: number[];
   // Album creation
   albumStatus: AlbumStatus | null;
   isCreatingAlbum: boolean;
@@ -135,10 +151,16 @@ class UploadManager {
     warnings: [],
     totalBytes: 0,
     uploadedBytes: 0,
+    dedupedBytes: 0,
+    failedBytes: 0,
     startTime: 0,
     endTime: 0,
+    paused: '',
     uploadSpeed: 0,
     peakSpeed: 0,
+    diskSpeed: 0,
+    speedHistory: [],
+    diskHistory: [],
     albumStatus: null,
     isCreatingAlbum: false,
   });
@@ -147,6 +169,9 @@ class UploadManager {
   private lastSpeedUpdate: number = 0;
   private lastBytesUploaded: number = 0;
   private speedSamples: number[] = [];
+  // Disk-read samples reported by the backend once per second
+  private pendingDiskDelta: number = 0;
+  private historyTimer: ReturnType<typeof setInterval> | null = null;
   // Track bytes from completed files
   private completedBytes: number = 0;
   // Track the last known BytesTotal for each file
@@ -189,6 +214,8 @@ class UploadManager {
       this.state.totalBytes = event.data.TotalBytes; // May be 0 initially
       this.state.uploadedFiles = 0;
       this.state.uploadedBytes = 0;
+      this.state.dedupedBytes = 0;
+      this.state.failedBytes = 0;
       this.state.isUploading = true;
       this.state.isStarting = false;
       this.awaitingStart = false;
@@ -198,11 +225,17 @@ class UploadManager {
       this.state.endTime = 0;
       this.state.uploadSpeed = 0;
       this.state.peakSpeed = 0;
+      this.state.diskSpeed = 0;
+      this.state.speedHistory = [];
+      this.state.diskHistory = [];
       this.state.albumStatus = null;
       this.state.isCreatingAlbum = false;
+      this.state.paused = '';
       this.lastSpeedUpdate = Date.now();
       this.lastBytesUploaded = 0;
       this.speedSamples = [];
+      this.pendingDiskDelta = 0;
+      this.startHistoryTimer();
       this.completedBytes = 0;
       this.fileBytes.clear();
       this.totalBytesAdjustment = 0;
@@ -270,10 +303,18 @@ class UploadManager {
 
       this.state.uploadedFiles += recordUploadResult(this.state.results, event.data);
       if (!event.data.IsError) {
-        const completedFileBytes = this.fileBytes.get(Path);
-        if (completedFileBytes && completedFileBytes > 0) {
-          this.completedBytes += completedFileBytes;
+        if (event.data.Transferred) {
+          // Bytes that went over the wire are tracked via thread progress.
+          const completedFileBytes = this.fileBytes.get(Path);
+          if (completedFileBytes && completedFileBytes > 0) {
+            this.completedBytes += completedFileBytes;
+          }
+        } else if (event.data.Bytes > 0) {
+          // Hash-check hit or preflight skip: nothing was transferred.
+          this.state.dedupedBytes += event.data.Bytes;
         }
+      } else if (event.data.Bytes > 0) {
+        this.state.failedBytes += event.data.Bytes;
       }
       for (const completedPath of Paths?.length ? Paths : [Path]) {
         this.fileBytes.delete(completedPath);
@@ -296,6 +337,21 @@ class UploadManager {
     Events.On("uploadStop", () => {
       debugLog("event", "backend", "uploadStop");
       this.finishBatch();
+    });
+
+    // Network pause: the run stopped early and will auto-resume later.
+    // uploadStop arrives right after and owns the batch finish.
+    Events.On("uploadPaused", (event: { data: string }) => {
+      debugLog("warn", "backend", "uploadPaused", event.data);
+      this.state.paused = event.data || "Upload paused";
+    });
+
+    // Disk-read deltas from the backend, accumulated until the sampler runs.
+    Events.On("uploadDiskRead", (event: { data: number }) => {
+      debugLog("event", "backend", "uploadDiskRead", event.data);
+      if (event.data > 0) {
+        this.pendingDiskDelta += event.data;
+      }
     });
 
     // Handle album creation progress
@@ -329,9 +385,35 @@ class UploadManager {
     if (this.state.endTime === 0) {
       this.state.endTime = Date.now();
     }
+    this.stopHistoryTimer();
     this.state.runBytes += this.state.uploadedBytes;
     this.state.isUploading = false;
     this.scheduleNextJob();
+  }
+
+  /** Samples upload and disk speed once per second for the live graphs. */
+  private startHistoryTimer() {
+    this.stopHistoryTimer();
+    this.historyTimer = setInterval(() => this.sampleHistory(), 1000);
+  }
+
+  private stopHistoryTimer() {
+    if (this.historyTimer !== null) {
+      clearInterval(this.historyTimer);
+      this.historyTimer = null;
+    }
+  }
+
+  private sampleHistory() {
+    const maxSamples = 120;
+    this.state.speedHistory.push(Math.round(this.state.uploadSpeed));
+    this.state.diskSpeed = Math.round(this.pendingDiskDelta);
+    this.state.diskHistory.push(this.state.diskSpeed);
+    this.pendingDiskDelta = 0;
+    if (this.state.speedHistory.length > maxSamples) {
+      this.state.speedHistory.shift();
+      this.state.diskHistory.shift();
+    }
   }
 
   /** True from the moment a drop is accepted until the last queued job has finished. */
@@ -417,6 +499,8 @@ class UploadManager {
 
   private scheduleNextJob() {
     if (this.advanceTimer !== null || this.state.queue.length === 0) return;
+    // A network pause holds queued drops until the resumed run finishes.
+    if (this.state.paused) return;
 
     this.state.isStarting = true;
     this.advanceTimer = setTimeout(() => {
@@ -512,6 +596,8 @@ class UploadManager {
   /** Cancels the running upload and drops everything queued behind it. */
   public cancelUpload() {
     debugLog("info", "frontend", "uploadCancel");
+    this.state.paused = '';
+    this.stopHistoryTimer();
     this.clearQueue();
     if (this.advanceTimer !== null) {
       clearTimeout(this.advanceTimer);

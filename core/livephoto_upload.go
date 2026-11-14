@@ -21,6 +21,8 @@ type LivePhotoUploadOptions struct {
 	DeleteFromHost             bool
 	SetDateFromFilename        bool
 	UpdateExistingPhotosToLive bool
+	// HashCache reuses SHA-1 digests for unchanged files across runs.
+	HashCache *HashCache
 }
 
 func uploadLivePhotoWithCallback(
@@ -49,11 +51,11 @@ func uploadLivePhotoWithCallback(
 		Message:  "Hashing Live Photo pair...",
 	})
 
-	photoSHA1, err := CalculateSHA1(ctx, pair.PhotoPath)
+	photoSHA1, err := calculateSHA1Cached(ctx, pair.PhotoPath, options.HashCache)
 	if err != nil {
 		return "", false, fmt.Errorf("hash Live Photo still: %w", err)
 	}
-	videoSHA1, err := CalculateSHA1(ctx, pair.VideoPath)
+	videoSHA1, err := calculateSHA1Cached(ctx, pair.VideoPath, options.HashCache)
 	if err != nil {
 		return "", false, fmt.Errorf("hash Live Photo video: %w", err)
 	}

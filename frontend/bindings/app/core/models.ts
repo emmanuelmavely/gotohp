@@ -5,6 +5,72 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+/**
+ * AccountStorage summarizes the account's remote library. It is what the
+ * GUI's storage chip and statistics view show after a (delta) sync.
+ */
+export class AccountStorage {
+    /**
+     * Summary covers the files that count against the storage quota,
+     * deduplicated by file content.
+     */
+    "Summary": QuotaSummary;
+
+    /**
+     * LibraryBytes is the raw size of all library items before dedup.
+     */
+    "LibraryBytes": number;
+
+    /**
+     * Items is the number of library entries (a file can appear more than once).
+     */
+    "Items": number;
+
+    /**
+     * SyncToken reuses the delta token of the last sync; empty until the
+     * first full sync completed.
+     */
+    "SyncToken": string;
+
+    /**
+     * SyncedAt is the Unix time of the index refresh.
+     */
+    "SyncedAt": number;
+
+    /** Creates a new AccountStorage instance. */
+    constructor($$source: Partial<AccountStorage> = {}) {
+        if (!("Summary" in $$source)) {
+            this["Summary"] = (new QuotaSummary());
+        }
+        if (!("LibraryBytes" in $$source)) {
+            this["LibraryBytes"] = 0;
+        }
+        if (!("Items" in $$source)) {
+            this["Items"] = 0;
+        }
+        if (!("SyncToken" in $$source)) {
+            this["SyncToken"] = "";
+        }
+        if (!("SyncedAt" in $$source)) {
+            this["SyncedAt"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AccountStorage instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AccountStorage {
+        const $$createField0_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Summary" in $$parsedSource) {
+            $$parsedSource["Summary"] = $$createField0_0($$parsedSource["Summary"]);
+        }
+        return new AccountStorage($$parsedSource as Partial<AccountStorage>);
+    }
+}
+
 export class AccountSummary {
     "email": string;
     "needsTokenBinding": boolean;
@@ -50,7 +116,7 @@ export class AccountsState {
      * Creates a new AccountsState instance from a string or object.
      */
     static createFrom($$source: any = {}): AccountsState {
-        const $$createField0_0 = $$createType1;
+        const $$createField0_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("accounts" in $$parsedSource) {
             $$parsedSource["accounts"] = $$createField0_0($$parsedSource["accounts"]);
@@ -122,7 +188,7 @@ export class AlbumStatus {
      * Creates a new AlbumStatus instance from a string or object.
      */
     static createFrom($$source: any = {}): AlbumStatus {
-        const $$createField3_0 = $$createType2;
+        const $$createField3_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("AlbumKeys" in $$parsedSource) {
             $$parsedSource["AlbumKeys"] = $$createField3_0($$parsedSource["AlbumKeys"]);
@@ -141,6 +207,18 @@ export class FileUploadResult {
     "ErrorMessage": string;
     "Path": string;
     "Paths": string[];
+
+    /**
+     * Bytes is the total size of the item's files. Zero when the size is
+     * unknown or when a Live Photo delta already adjusted the reported total.
+     */
+    "Bytes": number;
+
+    /**
+     * Transferred is true only when the bytes actually went over the wire.
+     * False for hash-check hits, skipped duplicates, and errors.
+     */
+    "Transferred": boolean;
 
     /** Creates a new FileUploadResult instance. */
     constructor($$source: Partial<FileUploadResult> = {}) {
@@ -171,6 +249,12 @@ export class FileUploadResult {
         if (!("Paths" in $$source)) {
             this["Paths"] = [];
         }
+        if (!("Bytes" in $$source)) {
+            this["Bytes"] = 0;
+        }
+        if (!("Transferred" in $$source)) {
+            this["Transferred"] = false;
+        }
 
         Object.assign(this, $$source);
     }
@@ -179,7 +263,7 @@ export class FileUploadResult {
      * Creates a new FileUploadResult instance from a string or object.
      */
     static createFrom($$source: any = {}): FileUploadResult {
-        const $$createField8_0 = $$createType2;
+        const $$createField8_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Paths" in $$parsedSource) {
             $$parsedSource["Paths"] = $$createField8_0($$parsedSource["Paths"]);
@@ -211,12 +295,321 @@ export class FilesDroppedEvent {
      * Creates a new FilesDroppedEvent instance from a string or object.
      */
     static createFrom($$source: any = {}): FilesDroppedEvent {
-        const $$createField0_0 = $$createType2;
+        const $$createField0_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("files" in $$parsedSource) {
             $$parsedSource["files"] = $$createField0_0($$parsedSource["files"]);
         }
         return new FilesDroppedEvent($$parsedSource as Partial<FilesDroppedEvent>);
+    }
+}
+
+/**
+ * LibrarySyncStats reports how much a full library sync has fetched so far.
+ */
+export class LibrarySyncStats {
+    /**
+     * Pages is the number of responses fetched, the library state included.
+     */
+    "Pages": number;
+
+    /**
+     * Items is the number of distinct media items seen.
+     */
+    "Items": number;
+
+    /**
+     * TotalBytes is the combined file size of those items.
+     */
+    "TotalBytes": number;
+
+    /**
+     * ChargedItems and ChargedBytes cover the items that count against the
+     * storage quota.
+     */
+    "ChargedItems": number;
+    "ChargedBytes": number;
+
+    /**
+     * UniqueChargedItems and UniqueChargedBytes count each stored file once
+     * (by dedup key), which is how the account is charged. While a sync is
+     * running they are a close estimate; UniqueQuotaChargedMedia gives the
+     * final figure.
+     */
+    "UniqueChargedItems": number;
+    "UniqueChargedBytes": number;
+
+    /** Creates a new LibrarySyncStats instance. */
+    constructor($$source: Partial<LibrarySyncStats> = {}) {
+        if (!("Pages" in $$source)) {
+            this["Pages"] = 0;
+        }
+        if (!("Items" in $$source)) {
+            this["Items"] = 0;
+        }
+        if (!("TotalBytes" in $$source)) {
+            this["TotalBytes"] = 0;
+        }
+        if (!("ChargedItems" in $$source)) {
+            this["ChargedItems"] = 0;
+        }
+        if (!("ChargedBytes" in $$source)) {
+            this["ChargedBytes"] = 0;
+        }
+        if (!("UniqueChargedItems" in $$source)) {
+            this["UniqueChargedItems"] = 0;
+        }
+        if (!("UniqueChargedBytes" in $$source)) {
+            this["UniqueChargedBytes"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LibrarySyncStats instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LibrarySyncStats {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LibrarySyncStats($$parsedSource as Partial<LibrarySyncStats>);
+    }
+}
+
+/**
+ * LivePhotoExclusion is a name that has a photo and a video but is not offered
+ * for repair, with the reason.
+ */
+export class LivePhotoExclusion {
+    "Stem": string;
+    "Reason": string;
+
+    /** Creates a new LivePhotoExclusion instance. */
+    constructor($$source: Partial<LivePhotoExclusion> = {}) {
+        if (!("Stem" in $$source)) {
+            this["Stem"] = "";
+        }
+        if (!("Reason" in $$source)) {
+            this["Reason"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LivePhotoExclusion instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LivePhotoExclusion {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LivePhotoExclusion($$parsedSource as Partial<LivePhotoExclusion>);
+    }
+}
+
+/**
+ * LivePhotoRepairCandidate is one remote photo + orphan .mov pair.
+ */
+export class LivePhotoRepairCandidate {
+    /**
+     * Stem is the shared lowercased filename stem.
+     */
+    "Stem": string;
+    "Photo": RemoteMediaItem | null;
+    "Video": RemoteMediaItem | null;
+
+    /** Creates a new LivePhotoRepairCandidate instance. */
+    constructor($$source: Partial<LivePhotoRepairCandidate> = {}) {
+        if (!("Stem" in $$source)) {
+            this["Stem"] = "";
+        }
+        if (!("Photo" in $$source)) {
+            this["Photo"] = null;
+        }
+        if (!("Video" in $$source)) {
+            this["Video"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LivePhotoRepairCandidate instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LivePhotoRepairCandidate {
+        const $$createField1_0 = $$createType5;
+        const $$createField2_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Photo" in $$parsedSource) {
+            $$parsedSource["Photo"] = $$createField1_0($$parsedSource["Photo"]);
+        }
+        if ("Video" in $$parsedSource) {
+            $$parsedSource["Video"] = $$createField2_0($$parsedSource["Video"]);
+        }
+        return new LivePhotoRepairCandidate($$parsedSource as Partial<LivePhotoRepairCandidate>);
+    }
+}
+
+/**
+ * LivePhotoRepairOutcome reports what one repair attempt did.
+ */
+export class LivePhotoRepairOutcome {
+    "Stem": string;
+
+    /**
+     * Status is "repaired", "skipped", or "failed".
+     */
+    "Status": string;
+    "Message": string;
+
+    /**
+     * PhotoMediaKey identifies the still, so the result can link to it in
+     * Google Photos.
+     */
+    "PhotoMediaKey": string;
+
+    /** Creates a new LivePhotoRepairOutcome instance. */
+    constructor($$source: Partial<LivePhotoRepairOutcome> = {}) {
+        if (!("Stem" in $$source)) {
+            this["Stem"] = "";
+        }
+        if (!("Status" in $$source)) {
+            this["Status"] = "";
+        }
+        if (!("Message" in $$source)) {
+            this["Message"] = "";
+        }
+        if (!("PhotoMediaKey" in $$source)) {
+            this["PhotoMediaKey"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LivePhotoRepairOutcome instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LivePhotoRepairOutcome {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LivePhotoRepairOutcome($$parsedSource as Partial<LivePhotoRepairOutcome>);
+    }
+}
+
+/**
+ * LivePhotoRepairProgress reports where a batch of repairs stands. One is sent
+ * at every stage change, throttled byte updates while the video moves, and a
+ * final one per pair with Stage "done" and its Outcome.
+ */
+export class LivePhotoRepairProgress {
+    /**
+     * Index is the 1-based position of the current pair in the batch.
+     */
+    "Index": number;
+    "Total": number;
+    "Stem": string;
+
+    /**
+     * FileName is the orphan video's file name.
+     */
+    "FileName": string;
+    "Stage": string;
+
+    /**
+     * BytesDone and BytesTotal track the download or upload in progress.
+     */
+    "BytesDone": number;
+    "BytesTotal": number;
+
+    /**
+     * Outcome is set when Stage is "done".
+     */
+    "Outcome": LivePhotoRepairOutcome | null;
+
+    /** Creates a new LivePhotoRepairProgress instance. */
+    constructor($$source: Partial<LivePhotoRepairProgress> = {}) {
+        if (!("Index" in $$source)) {
+            this["Index"] = 0;
+        }
+        if (!("Total" in $$source)) {
+            this["Total"] = 0;
+        }
+        if (!("Stem" in $$source)) {
+            this["Stem"] = "";
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("Stage" in $$source)) {
+            this["Stage"] = "";
+        }
+        if (!("BytesDone" in $$source)) {
+            this["BytesDone"] = 0;
+        }
+        if (!("BytesTotal" in $$source)) {
+            this["BytesTotal"] = 0;
+        }
+        if (!("Outcome" in $$source)) {
+            this["Outcome"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LivePhotoRepairProgress instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LivePhotoRepairProgress {
+        const $$createField7_0 = $$createType7;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Outcome" in $$parsedSource) {
+            $$parsedSource["Outcome"] = $$createField7_0($$parsedSource["Outcome"]);
+        }
+        return new LivePhotoRepairProgress($$parsedSource as Partial<LivePhotoRepairProgress>);
+    }
+}
+
+/**
+ * LivePhotoRepairReport is what detection produces, ready for display.
+ */
+export class LivePhotoRepairReport {
+    "Candidates": LivePhotoRepairCandidate[];
+    "Ambiguous": string[];
+
+    /**
+     * Excluded names have a photo and a video that are not safe to join.
+     */
+    "Excluded": LivePhotoExclusion[];
+
+    /** Creates a new LivePhotoRepairReport instance. */
+    constructor($$source: Partial<LivePhotoRepairReport> = {}) {
+        if (!("Candidates" in $$source)) {
+            this["Candidates"] = [];
+        }
+        if (!("Ambiguous" in $$source)) {
+            this["Ambiguous"] = [];
+        }
+        if (!("Excluded" in $$source)) {
+            this["Excluded"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LivePhotoRepairReport instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LivePhotoRepairReport {
+        const $$createField0_0 = $$createType9;
+        const $$createField1_0 = $$createType3;
+        const $$createField2_0 = $$createType11;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Candidates" in $$parsedSource) {
+            $$parsedSource["Candidates"] = $$createField0_0($$parsedSource["Candidates"]);
+        }
+        if ("Ambiguous" in $$parsedSource) {
+            $$parsedSource["Ambiguous"] = $$createField1_0($$parsedSource["Ambiguous"]);
+        }
+        if ("Excluded" in $$parsedSource) {
+            $$parsedSource["Excluded"] = $$createField2_0($$parsedSource["Excluded"]);
+        }
+        return new LivePhotoRepairReport($$parsedSource as Partial<LivePhotoRepairReport>);
     }
 }
 
@@ -238,6 +631,19 @@ export class Preferences {
     "disableUnsupportedFilesFilter": boolean;
     "setDateFromFilename": boolean;
     "excludePattern": string;
+
+    /**
+     * Watch folders monitor for new media files (Dropbox-style). The upload
+     * policy for watched files is the ordinary preference set above.
+     */
+    "watchEnabled": boolean;
+    "watchFolders": string[];
+
+    /**
+     * StartWithWindows registers the GUI in the user's autostart registry
+     * key (Windows only).
+     */
+    "startWithWindows": boolean;
 
     /**
      * AlbumName and AlbumAutoMode are per-session choices and are never persisted.
@@ -286,6 +692,15 @@ export class Preferences {
         if (!("excludePattern" in $$source)) {
             this["excludePattern"] = "";
         }
+        if (!("watchEnabled" in $$source)) {
+            this["watchEnabled"] = false;
+        }
+        if (!("watchFolders" in $$source)) {
+            this["watchFolders"] = [];
+        }
+        if (!("startWithWindows" in $$source)) {
+            this["startWithWindows"] = false;
+        }
         if (!("albumName" in $$source)) {
             this["albumName"] = "";
         }
@@ -300,7 +715,11 @@ export class Preferences {
      * Creates a new Preferences instance from a string or object.
      */
     static createFrom($$source: any = {}): Preferences {
+        const $$createField14_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("watchFolders" in $$parsedSource) {
+            $$parsedSource["watchFolders"] = $$createField14_0($$parsedSource["watchFolders"]);
+        }
         return new Preferences($$parsedSource as Partial<Preferences>);
     }
 }
@@ -329,12 +748,159 @@ export class PreflightWarning {
      * Creates a new PreflightWarning instance from a string or object.
      */
     static createFrom($$source: any = {}): PreflightWarning {
-        const $$createField0_0 = $$createType2;
+        const $$createField0_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Paths" in $$parsedSource) {
             $$parsedSource["Paths"] = $$createField0_0($$parsedSource["Paths"]);
         }
         return new PreflightWarning($$parsedSource as Partial<PreflightWarning>);
+    }
+}
+
+/**
+ * QuotaSummary totals the storage usage of one library sync.
+ */
+export class QuotaSummary {
+    /**
+     * TotalBytes is the sum of the quota-charged bytes of every item.
+     */
+    "TotalBytes": number;
+
+    /**
+     * TrashedBytes is the quota-charged bytes of items in the trash; these
+     * still count against the quota until they are deleted permanently.
+     */
+    "TrashedBytes": number;
+
+    /**
+     * ItemCount and TrashedCount are the numbers of quota-charged items.
+     */
+    "ItemCount": number;
+    "TrashedCount": number;
+
+    /** Creates a new QuotaSummary instance. */
+    constructor($$source: Partial<QuotaSummary> = {}) {
+        if (!("TotalBytes" in $$source)) {
+            this["TotalBytes"] = 0;
+        }
+        if (!("TrashedBytes" in $$source)) {
+            this["TrashedBytes"] = 0;
+        }
+        if (!("ItemCount" in $$source)) {
+            this["ItemCount"] = 0;
+        }
+        if (!("TrashedCount" in $$source)) {
+            this["TrashedCount"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaSummary instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaSummary {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaSummary($$parsedSource as Partial<QuotaSummary>);
+    }
+}
+
+/**
+ * RemoteMediaItem is one media item as reported by the library sync.
+ */
+export class RemoteMediaItem {
+    "MediaKey": string;
+    "FileName": string;
+    "DedupKey": string;
+    "Sha1": string;
+    "SizeBytes": number;
+    "QuotaChargedBytes": number;
+
+    /**
+     * OriginalQuality reports whether the item is stored in its original
+     * (quota-charged) quality.
+     */
+    "OriginalQuality": boolean;
+    "Type": number;
+    "Origin": number;
+
+    /**
+     * IsCanonical is false for non-canonical duplicates of shared or
+     * partner items.
+     */
+    "IsCanonical": boolean;
+    "Trashed": boolean;
+
+    /**
+     * TrashTimestamp is 0 for items that are not in the trash.
+     */
+    "TrashTimestamp": number;
+    "ContentVersion": number;
+
+    /**
+     * UTCTimestamp is when the item was taken, in milliseconds since the Unix
+     * epoch. Photos keep the milliseconds; videos are rounded to seconds.
+     */
+    "UTCTimestamp": number;
+
+    /** Creates a new RemoteMediaItem instance. */
+    constructor($$source: Partial<RemoteMediaItem> = {}) {
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("DedupKey" in $$source)) {
+            this["DedupKey"] = "";
+        }
+        if (!("Sha1" in $$source)) {
+            this["Sha1"] = "";
+        }
+        if (!("SizeBytes" in $$source)) {
+            this["SizeBytes"] = 0;
+        }
+        if (!("QuotaChargedBytes" in $$source)) {
+            this["QuotaChargedBytes"] = 0;
+        }
+        if (!("OriginalQuality" in $$source)) {
+            this["OriginalQuality"] = false;
+        }
+        if (!("Type" in $$source)) {
+            this["Type"] = 0;
+        }
+        if (!("Origin" in $$source)) {
+            this["Origin"] = 0;
+        }
+        if (!("IsCanonical" in $$source)) {
+            this["IsCanonical"] = false;
+        }
+        if (!("Trashed" in $$source)) {
+            this["Trashed"] = false;
+        }
+        if (!("TrashTimestamp" in $$source)) {
+            this["TrashTimestamp"] = 0;
+        }
+        if (!("ContentVersion" in $$source)) {
+            this["ContentVersion"] = 0;
+        }
+        if (!("UTCTimestamp" in $$source)) {
+            this["UTCTimestamp"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RemoteMediaItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): RemoteMediaItem {
+        const $$createField3_0 = $Create.ByteSlice;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Sha1" in $$parsedSource) {
+            $$parsedSource["Sha1"] = $$createField3_0($$parsedSource["Sha1"]);
+        }
+        return new RemoteMediaItem($$parsedSource as Partial<RemoteMediaItem>);
     }
 }
 
@@ -357,7 +923,7 @@ export class StartUploadEvent {
      * Creates a new StartUploadEvent instance from a string or object.
      */
     static createFrom($$source: any = {}): StartUploadEvent {
-        const $$createField0_0 = $$createType2;
+        const $$createField0_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("files" in $$parsedSource) {
             $$parsedSource["files"] = $$createField0_0($$parsedSource["files"]);
@@ -448,7 +1014,173 @@ export class UploadBatchStart {
     }
 }
 
+/**
+ * UploadJournalSummary is what the GUI and CLI show for a pending journal.
+ */
+export class UploadJournalSummary {
+    "Exists": boolean;
+    "StartedAt": number;
+    "Total": number;
+    "Done": number;
+    "Skipped": number;
+    "Failed": number;
+    "Pending": number;
+    "PendingBytes": number;
+    "SourcePaths": string;
+
+    /** Creates a new UploadJournalSummary instance. */
+    constructor($$source: Partial<UploadJournalSummary> = {}) {
+        if (!("Exists" in $$source)) {
+            this["Exists"] = false;
+        }
+        if (!("StartedAt" in $$source)) {
+            this["StartedAt"] = 0;
+        }
+        if (!("Total" in $$source)) {
+            this["Total"] = 0;
+        }
+        if (!("Done" in $$source)) {
+            this["Done"] = 0;
+        }
+        if (!("Skipped" in $$source)) {
+            this["Skipped"] = 0;
+        }
+        if (!("Failed" in $$source)) {
+            this["Failed"] = 0;
+        }
+        if (!("Pending" in $$source)) {
+            this["Pending"] = 0;
+        }
+        if (!("PendingBytes" in $$source)) {
+            this["PendingBytes"] = 0;
+        }
+        if (!("SourcePaths" in $$source)) {
+            this["SourcePaths"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UploadJournalSummary instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UploadJournalSummary {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UploadJournalSummary($$parsedSource as Partial<UploadJournalSummary>);
+    }
+}
+
+/**
+ * UploadStats are cumulative, cross-session counters persisted next to the
+ * config so the GUI's statistics view survives restarts. They record what
+ * actually moved: transferred upload bytes (dedup hits are not counted as
+ * uploaded), files, failures, time spent in runs, and a per-day history of
+ * the last 30 days.
+ */
+export class UploadStats {
+    "version": number;
+    "uploadedBytes": number;
+    "uploadedFiles": number;
+    "failedFiles": number;
+    "skippedFiles": number;
+    "downloadedBytes": number;
+    "activeSeconds": number;
+    "sessions": number;
+
+    /**
+     * RepairedLivePhotos counts Live Photos rejoined by the repair.
+     */
+    "repairedLivePhotos": number;
+
+    /**
+     * Daily maps "2006-01-02" to the bytes uploaded that day (local time).
+     */
+    "daily": { [_ in string]?: number };
+
+    /** Creates a new UploadStats instance. */
+    constructor($$source: Partial<UploadStats> = {}) {
+        if (!("version" in $$source)) {
+            this["version"] = 0;
+        }
+        if (!("uploadedBytes" in $$source)) {
+            this["uploadedBytes"] = 0;
+        }
+        if (!("uploadedFiles" in $$source)) {
+            this["uploadedFiles"] = 0;
+        }
+        if (!("failedFiles" in $$source)) {
+            this["failedFiles"] = 0;
+        }
+        if (!("skippedFiles" in $$source)) {
+            this["skippedFiles"] = 0;
+        }
+        if (!("downloadedBytes" in $$source)) {
+            this["downloadedBytes"] = 0;
+        }
+        if (!("activeSeconds" in $$source)) {
+            this["activeSeconds"] = 0;
+        }
+        if (!("sessions" in $$source)) {
+            this["sessions"] = 0;
+        }
+        if (!("repairedLivePhotos" in $$source)) {
+            this["repairedLivePhotos"] = 0;
+        }
+        if (!("daily" in $$source)) {
+            this["daily"] = {};
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UploadStats instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UploadStats {
+        const $$createField9_0 = $$createType12;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("daily" in $$parsedSource) {
+            $$parsedSource["daily"] = $$createField9_0($$parsedSource["daily"]);
+        }
+        return new UploadStats($$parsedSource as Partial<UploadStats>);
+    }
+}
+
+/**
+ * WatchFilesFoundEvent tells the UI that the watch folder found new files.
+ */
+export class WatchFilesFoundEvent {
+    "Count": number;
+
+    /** Creates a new WatchFilesFoundEvent instance. */
+    constructor($$source: Partial<WatchFilesFoundEvent> = {}) {
+        if (!("Count" in $$source)) {
+            this["Count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new WatchFilesFoundEvent instance from a string or object.
+     */
+    static createFrom($$source: any = {}): WatchFilesFoundEvent {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new WatchFilesFoundEvent($$parsedSource as Partial<WatchFilesFoundEvent>);
+    }
+}
+
 // Private type creation functions
-const $$createType0 = AccountSummary.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Array($Create.Any);
+const $$createType0 = QuotaSummary.createFrom;
+const $$createType1 = AccountSummary.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = $Create.Array($Create.Any);
+const $$createType4 = RemoteMediaItem.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = LivePhotoRepairOutcome.createFrom;
+const $$createType7 = $Create.Nullable($$createType6);
+const $$createType8 = LivePhotoRepairCandidate.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = LivePhotoExclusion.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = $Create.Map($Create.Any, $Create.Any);

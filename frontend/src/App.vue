@@ -11,6 +11,7 @@ import {
 import { useColorMode } from '@vueuse/core'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
+  Activity,
   AlertTriangle,
   Bug,
   Check,
@@ -18,9 +19,16 @@ import {
   CircleCheck,
   CircleX,
   Copy,
+  ExternalLink,
   FolderPlus,
   FolderTree,
+  HardDrive,
   KeyRound,
+  PanelBottomClose,
+  Pause,
+  Power,
+  RefreshCw,
+  RotateCcw,
   Settings,
   SkipForward,
   UploadCloud,
@@ -33,12 +41,22 @@ import GoogleAccountSelect from './components/GoogleAccountSelect.vue'
 import GoogleAuthSetup from "./components/GoogleAuthSetup.vue"
 import './index.css'
 import SettingsPanel from "./SettingsPanel.vue"
+import StatsPanel from "./StatsPanel.vue"
 import Upload from './Upload.vue'
 import { uploadManager } from './utils/UploadManager'
 import Toaster from './components/ui/sonner/Sonner.vue'
 import DebugPanel from './components/DebugPanel.vue'
 import MediaThumb from './components/MediaThumb.vue'
 import { thumbnailsActive } from './utils/thumbnails'
+import {
+  accountStorage,
+  calculateAccountStorage,
+  libraryScan,
+  minuteClock,
+  resetAccountStorage,
+  storageCountedAt,
+} from './utils/accountStorage'
+import { liveRepair, repairFraction } from './utils/liveRepair'
 import logoUrl from './assets/logo.svg'
 import {
   debugCounts,
@@ -47,7 +65,9 @@ import {
   installGlobalDebugHandlers,
   toggleDebug,
 } from './utils/debug'
-import { baseName, formatBytes, formatDuration } from './utils/format'
+import { baseName, formatBytes, formatDuration, formatTimeAgo } from './utils/format'
+import { closeBehavior } from './utils/closeBehavior'
+import { openInGooglePhotos } from './utils/googlePhotos'
 
 import { toast } from "vue-sonner"
 
@@ -68,8 +88,87 @@ const isMac = (() => {
 })()
 
 const isSettingsOpen = ref(false)
+const isStatsOpen = ref(false)
+
+// Closing the window: the backend holds the close and asks here what to do
+const isCloseDialogOpen = ref(false)
+const rememberCloseChoice = ref(false)
+const watchFoldersActive = ref(false)
+let closeAnswered = false
+
+function answerClose(choice: 'tray' | 'quit' | 'cancel') {
+  closeAnswered = true
+  if (choice !== 'cancel' && rememberCloseChoice.value) {
+    closeBehavior.value = choice
+  }
+  rememberCloseChoice.value = false
+  isCloseDialogOpen.value = false
+  debugLog('info', 'frontend', 'closeChoice', { choice })
+  Events.Emit('closeChoice', choice)
+}
+
+async function onCloseRequested() {
+  debugLog('event', 'backend', 'closeRequested')
+  if (closeBehavior.value !== 'ask') {
+    answerClose(closeBehavior.value)
+    return
+  }
+  try {
+    const config = await ConfigManager.GetSettings()
+    watchFoldersActive.value = config.watchEnabled && (config.watchFolders?.length ?? 0) > 0
+  } catch {
+    watchFoldersActive.value = false
+  }
+  closeAnswered = false
+  isCloseDialogOpen.value = true
+}
+
+// Dismissing the question (Escape, click outside) keeps the window open
+watch(isCloseDialogOpen, (open) => {
+  if (!open && !closeAnswered) answerClose('cancel')
+})
 const isDebugOpen = ref(false)
 const showResultDetails = ref(false)
+
+// Interrupted upload run offered for resume at startup
+interface ResumeSummary {
+  Exists: boolean
+  StartedAt: number
+  Total: number
+  Done: number
+  Skipped: number
+  Failed: number
+  Pending: number
+  PendingBytes: number
+  SourcePaths: string
+}
+const resumeOffer = ref<ResumeSummary | null>(null)
+
+const resumeTitle = computed(() => {
+  if (!resumeOffer.value) return ''
+  const base = baseName(resumeOffer.value.SourcePaths || '')
+  return base || 'Previous upload'
+})
+
+const resumeDetail = computed(() => {
+  if (!resumeOffer.value) return ''
+  const s = resumeOffer.value
+  const parts: string[] = []
+  if (s.Done > 0) parts.push(`${s.Done} uploaded`)
+  if (s.Skipped > 0) parts.push(`${s.Skipped} skipped`)
+  if (s.Failed > 0) parts.push(`${s.Failed} failed`)
+  return `${parts.join(' · ')} — ${s.Pending} remaining (${formatBytes(s.PendingBytes)})`
+})
+
+function acceptResume() {
+  resumeOffer.value = null
+  Events.Emit('resumeUpload')
+}
+
+function discardResume() {
+  resumeOffer.value = null
+  Events.Emit('discardUpload')
+}
 
 // Active upload options, shown as chips on the home screen
 interface UploadPrefs {
@@ -154,6 +253,8 @@ interface ResultRow {
   technical: string
   /** Set for uploaded files, so a thumbnail made during the upload can be shown. */
   path?: string
+  /** Set for uploaded files, to open them in Google Photos. */
+  mediaKey?: string
 }
 
 const allResultRows = computed<ResultRow[]>(() => {
@@ -178,6 +279,7 @@ const allResultRows = computed<ResultRow[]>(() => {
       detail: '',
       technical: `mediaKey=${item.mediaKey}\n${item.path}`,
       path: item.path,
+      mediaKey: item.mediaKey,
     })),
   ]
 })
@@ -209,6 +311,26 @@ const tokenBindingEmail = ref('')
 const isExtractingTokenBinding = ref(false)
 const isAccountSetupOpen = ref(false)
 const removingAccount = ref('')
+
+// Storage numbers belong to one account; forget them when it changes
+watch(selectedOption, (account) => resetAccountStorage(account), { immediate: true })
+
+// Compact live readout of a running library scan, for the strip under the header
+const scanCountedBytes = computed(() => {
+  const progress = libraryScan.progress
+  return progress ? (progress.UniqueChargedBytes ?? progress.ChargedBytes) : 0
+})
+const scanFraction = computed<number | null>(() => {
+  const progress = libraryScan.progress
+  if (!progress || progress.Pages === 0 || libraryScan.expectedItems <= 0) return null
+  return Math.min(0.99, progress.Items / libraryScan.expectedItems)
+})
+
+async function calculateStorage() {
+  if (!await calculateAccountStorage()) {
+    toast.error('Could not read account storage', { description: accountStorage.error })
+  }
+}
 
 watch(selectedOption, async (newValue) => {
   if (newValue) {
@@ -437,6 +559,8 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('resize', onResize)
 
+  Events.On('closeRequested', onCloseRequested)
+
   // Listen for files-dropped event from backend
   Events.On('files-dropped', async (event: { data: { files: string[]; dropZone: string } }) => {
     const { files, dropZone } = event.data
@@ -449,6 +573,14 @@ onMounted(() => {
       showAlbumInput.value = true
     } else {
       await submitUpload(files, '', dropZone === 'auto-album')
+    }
+  })
+
+  // Interrupted upload offered for resume by the backend at startup
+  Events.On('resumePending', (event: { data: ResumeSummary }) => {
+    debugLog('event', 'backend', 'resumePending', event.data)
+    if (event.data?.Exists && event.data.Pending > 0) {
+      resumeOffer.value = event.data
     }
   })
 })
@@ -517,6 +649,18 @@ onUnmounted(() => {
           DEBUG
         </button>
         <Button
+          v-if="options.length > 0"
+          variant="ghost"
+          size="icon"
+          class="size-8 cursor-pointer"
+          aria-label="Statistics"
+          title="Statistics"
+          :disabled="isActive"
+          @click="isStatsOpen = true"
+        >
+          <Activity class="size-4" />
+        </Button>
+        <Button
           variant="ghost"
           size="icon"
           class="size-8 cursor-pointer"
@@ -529,6 +673,106 @@ onUnmounted(() => {
         </Button>
       </div>
     </header>
+
+    <!-- Storage really used by the selected account -->
+    <div
+      v-if="options.length > 0 && !isActive"
+      class="relative flex h-8 shrink-0 items-center gap-2 border-b bg-background/40 px-3 text-xs select-none"
+      style="--wails-draggable: none"
+    >
+      <HardDrive class="size-3.5 shrink-0 text-muted-foreground" />
+      <!-- A Live Photo repair keeps running when the statistics sheet is closed -->
+      <button
+        v-if="liveRepair.running"
+        type="button"
+        class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+        title="Show the repair in Statistics"
+        @click="isStatsOpen = true"
+      >
+        <span class="relative flex size-2 shrink-0">
+          <span class="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
+          <span class="relative inline-flex size-2 rounded-full bg-primary" />
+        </span>
+        <span class="min-w-0 truncate tabular-nums">
+          <span class="font-medium">Repairing Live Photos</span>
+          <span
+            v-if="liveRepair.progress"
+            class="text-muted-foreground"
+          > · {{ liveRepair.progress.Index }} of {{ liveRepair.progress.Total }} · {{ Math.round(repairFraction(liveRepair.progress) * 100) }}%</span>
+        </span>
+        <span class="ml-auto shrink-0 text-muted-foreground">Details</span>
+      </button>
+      <template v-else-if="accountStorage.data">
+        <span class="min-w-0 truncate tabular-nums">
+          <span class="font-medium">{{ formatBytes(accountStorage.data.Summary.TotalBytes, 2) }}</span>
+          <span class="text-muted-foreground"> used · {{ accountStorage.data.Summary.ItemCount.toLocaleString() }} files</span>
+          <span
+            v-if="storageCountedAt(accountStorage.data)"
+            class="text-muted-foreground"
+            :title="new Date(storageCountedAt(accountStorage.data)).toLocaleString()"
+          > · {{ formatTimeAgo(storageCountedAt(accountStorage.data), minuteClock) }}</span>
+        </span>
+        <button
+          type="button"
+          class="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          title="Count again"
+          :disabled="accountStorage.loading || libraryScan.startedAt > 0 || libraryScan.repairing"
+          @click="calculateStorage"
+        >
+          <RefreshCw
+            class="size-3"
+            :class="accountStorage.loading && 'animate-spin'"
+          />
+          {{ accountStorage.loading ? 'Counting…' : 'Refresh' }}
+        </button>
+      </template>
+      <button
+        v-else-if="accountStorage.loading"
+        type="button"
+        class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+        title="Show the scan in Statistics"
+        @click="isStatsOpen = true"
+      >
+        <span class="relative flex size-2 shrink-0">
+          <span class="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
+          <span class="relative inline-flex size-2 rounded-full bg-primary" />
+        </span>
+        <span
+          v-if="libraryScan.progress"
+          class="min-w-0 truncate tabular-nums"
+        >
+          <span class="font-medium">{{ formatBytes(scanCountedBytes, 2) }}</span>
+          <span class="text-muted-foreground">
+            so far · {{ libraryScan.progress.Items.toLocaleString() }} items read<template v-if="scanFraction !== null"> · about {{ Math.round(scanFraction * 100) }}%</template>
+          </span>
+        </span>
+        <span
+          v-else
+          class="min-w-0 truncate text-muted-foreground"
+        >Connecting to your library…</span>
+        <span class="ml-auto shrink-0 text-muted-foreground">Details</span>
+      </button>
+      <button
+        v-else
+        type="button"
+        class="cursor-pointer rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+        title="Counts the storage your photos really use, from your library"
+        @click="calculateStorage"
+      >
+        Calculate storage used
+      </button>
+      <!-- Scan progress along the bottom edge of the strip -->
+      <div
+        v-if="accountStorage.loading && !accountStorage.data"
+        class="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-primary/15"
+      >
+        <div
+          class="h-full bg-primary transition-[width] duration-700 ease-out"
+          :class="scanFraction === null && 'animate-pulse'"
+          :style="{ width: scanFraction === null ? '100%' : `${scanFraction * 100}%` }"
+        />
+      </div>
+    </div>
 
     <!-- Drop zones shown when dragging files -->
     <div
@@ -687,6 +931,76 @@ onUnmounted(() => {
       <template v-else>
         <!-- Normal UI when not dragging -->
         <template v-if="!showAlbumInput">
+          <div
+            v-if="uploadState.paused"
+            class="flex flex-col gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 p-3"
+            style="--wails-draggable: none"
+          >
+            <div class="flex gap-2.5">
+              <Pause class="mt-0.5 size-4 shrink-0 text-sky-300" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm leading-snug">
+                  Upload paused
+                </p>
+                <p class="text-[11px] text-muted-foreground">
+                  {{ uploadState.paused }} · Journal saved — resuming will skip everything already uploaded.
+                </p>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                class="cursor-pointer select-none"
+                @click="uploadManager.cancelUpload()"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                class="cursor-pointer select-none"
+                @click="Events.Emit('resumeUpload')"
+              >
+                <RotateCcw class="size-3.5" />
+                Retry now
+              </Button>
+            </div>
+          </div>
+          <div
+            v-if="resumeOffer"
+            class="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/10 p-3"
+            style="--wails-draggable: none"
+          >
+            <div class="flex gap-2.5">
+              <RotateCcw class="mt-0.5 size-4 shrink-0 text-primary" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm leading-snug">
+                  Interrupted upload<span v-if="resumeTitle">: {{ resumeTitle }}</span>
+                </p>
+                <p class="text-[11px] text-muted-foreground">
+                  {{ resumeDetail }}
+                </p>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                class="cursor-pointer select-none"
+                @click="discardResume"
+              >
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                class="cursor-pointer select-none"
+                @click="acceptResume"
+              >
+                <RotateCcw class="size-3.5" />
+                Resume upload
+              </Button>
+            </div>
+          </div>
           <div
             class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-muted-foreground/30 bg-card/40 px-6 text-center"
             :class="hasResults ? 'py-6' : 'min-h-56 flex-1 py-8'"
@@ -883,6 +1197,16 @@ onUnmounted(() => {
                     {{ row.technical }}
                   </p>
                 </div>
+                <button
+                  v-if="row.mediaKey"
+                  type="button"
+                  class="flex size-6 shrink-0 cursor-pointer items-center justify-center self-start rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Open in Google Photos"
+                  :aria-label="`Open ${row.title} in Google Photos`"
+                  @click="openInGooglePhotos(row.mediaKey)"
+                >
+                  <ExternalLink class="size-3.5" />
+                </button>
               </li>
               <li
                 v-if="allResultRows.length > resultRows.length"
@@ -946,6 +1270,73 @@ onUnmounted(() => {
         </SheetHeader>
         <div class="min-h-0 flex-1 overflow-y-auto">
           <SettingsPanel />
+        </div>
+      </SheetContent>
+    </Sheet>
+    <Sheet v-model:open="isCloseDialogOpen">
+      <SheetContent
+        side="bottom"
+        class="gap-0"
+        style="--wails-draggable: none"
+      >
+        <div class="mx-auto flex w-full max-w-md flex-col gap-4 px-5 pt-5 pb-5">
+          <SheetHeader class="gap-1.5 p-0">
+            <SheetTitle>Keep gotohp running?</SheetTitle>
+            <SheetDescription class="text-sm leading-snug">
+              <template v-if="isActive">
+                An upload is running. In the tray it keeps going; quitting stops it, and you can resume it the next time you open gotohp.
+              </template>
+              <template v-else-if="watchFoldersActive">
+                Watch folders only upload while gotohp is running. In the tray it keeps watching.
+              </template>
+              <template v-else>
+                gotohp can stay in the system tray, ready for the next upload, or quit completely.
+              </template>
+            </SheetDescription>
+          </SheetHeader>
+          <label class="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
+            <input
+              v-model="rememberCloseChoice"
+              type="checkbox"
+              class="accent-primary"
+            >
+            Don't ask again (change it in Settings)
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              class="cursor-pointer select-none"
+              @click="answerClose('quit')"
+            >
+              <Power />
+              Quit
+            </Button>
+            <Button
+              class="cursor-pointer select-none"
+              @click="answerClose('tray')"
+            >
+              <PanelBottomClose />
+              Minimize to tray
+            </Button>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+    <Sheet v-model:open="isStatsOpen">
+      <SheetContent
+        side="bottom"
+        class="max-h-[90vh] gap-0"
+        style="--wails-draggable: none"
+        @open-auto-focus.prevent
+      >
+        <SheetHeader class="mx-auto w-full max-w-2xl px-5 pt-4 pb-3">
+          <SheetTitle>Statistics</SheetTitle>
+          <SheetDescription class="text-xs">
+            Storage in your account, what this app has transferred, and Live Photo repair.
+          </SheetDescription>
+        </SheetHeader>
+        <div class="min-h-0 flex-1 overflow-y-auto">
+          <StatsPanel />
         </div>
       </SheetContent>
     </Sheet>

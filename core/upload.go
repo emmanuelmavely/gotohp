@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 // FilesDroppedEvent is emitted when files are dropped on any drop zone
@@ -34,6 +35,16 @@ type UploadManager struct {
 	logger   *slog.Logger
 	// apiOptions is captured from the options of the run in progress.
 	apiOptions ApiOptions
+	// hashCache persists file digests across runs. Created lazily on the
+	// first Upload and saved after each run.
+	hashCache *HashCache
+	// autoResume enables pausing a run when the network fails and resuming
+	// it automatically when connectivity returns. Only the GUI enables it;
+	// the CLI ends the run and leaves the journal for an explicit resume.
+	autoResume bool
+	// paused is true between a network pause and the automatic resume. A
+	// user cancel during the pause also discards the journal.
+	paused bool
 }
 
 // NewUploadManager creates a manager that reports progress to reporter. A nil
@@ -51,6 +62,18 @@ func NewUploadManager(reporter UploadReporter, logger *slog.Logger) *UploadManag
 	}
 }
 
+// HashCache returns the run-scoped digest cache, creating it on first use.
+// The watch folder manager shares it so a startup rescan can tell changed
+// files from unchanged ones.
+func (m *UploadManager) HashCache() *HashCache {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.hashCache == nil {
+		m.hashCache = NewHashCache(HashCachePath())
+	}
+	return m.hashCache
+}
+
 func (m *UploadManager) IsRunning() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -65,6 +88,19 @@ func (m *UploadManager) Cancel() {
 		m.canceled = true
 		// Don't set to nil - readers still need to detect closure via select
 	}
+	// A cancel during a network pause ends the stopped run for good: drop
+	// the journal so the next start does not offer it again.
+	if m.paused {
+		m.paused = false
+		go DiscardUploadJournal()
+	}
+}
+
+// SetAutoResume enables pausing and automatic resuming on network failures.
+func (m *UploadManager) SetAutoResume(enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.autoResume = enabled
 }
 
 // isCancelled checks if cancellation has been requested
@@ -106,6 +142,12 @@ type FileUploadResult struct {
 	ErrorMessage string   `json:"ErrorMessage"`
 	Path         string   `json:"Path"`
 	Paths        []string `json:"Paths"`
+	// Bytes is the total size of the item's files. Zero when the size is
+	// unknown or when a Live Photo delta already adjusted the reported total.
+	Bytes int64 `json:"Bytes"`
+	// Transferred is true only when the bytes actually went over the wire.
+	// False for hash-check hits, skipped duplicates, and errors.
+	Transferred bool `json:"Transferred"`
 }
 
 type ThreadStatus struct {
@@ -132,6 +174,15 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 	m.cancel = make(chan struct{})
 	m.canceled = false
 	m.apiOptions = opts.Api
+	// A fresh run supersedes any network pause. Its journal replaces the
+	// paused run's journal, whose pending items are dropped.
+	m.paused = false
+	if opts.HashCache == nil {
+		if m.hashCache == nil {
+			m.hashCache = NewHashCache(HashCachePath())
+		}
+		opts.HashCache = m.hashCache
+	}
 	m.mu.Unlock()
 
 	// Make preflight visible immediately so a long directory or metadata scan can
@@ -169,16 +220,113 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 		return
 	}
 
+	journal := newUploadJournal(paths, opts, workItems, preflightWarnings)
+	journal.Save()
+
+	// Preflight-skipped items are counted in Total but not in workItems, so
+	// their bytes belong in the reported total too.
+	var extraTotalBytes int64
+	for _, warning := range preflightWarnings {
+		if isSkippedPreflightWarning(warning.Code) {
+			extraTotalBytes += sumPathSizes(warning.Paths)
+		}
+	}
+
+	go m.runWorkItems(workItems, opts, journal, extraTotalBytes)
+}
+
+// journalSaveInterval throttles journal writes during a run.
+const journalSaveInterval = 2 * time.Second
+
+// Resume continues an interrupted upload run from the journal file. Pending
+// and failed items are retried; done and skipped ones are not. It reports
+// whether a resume run was started.
+func (m *UploadManager) Resume() bool {
+	m.mu.Lock()
+	if m.running {
+		m.mu.Unlock()
+		return false
+	}
+	journal, err := loadUploadJournal()
+	if err != nil || journal == nil {
+		m.mu.Unlock()
+		return false
+	}
+	m.running = true
+	m.cancel = make(chan struct{})
+	m.canceled = false
+	if m.hashCache == nil {
+		m.hashCache = NewHashCache(HashCachePath())
+	}
+	hashCache := m.hashCache
+	m.mu.Unlock()
+
+	opts := journal.Options.normalized()
+	opts.HashCache = hashCache
+
+	remaining := journal.Remaining()
+	workItems := make([]UploadWorkItem, 0, len(remaining))
+	for _, item := range remaining {
+		if len(item.Paths) == 0 {
+			continue
+		}
+		if _, err := os.Stat(item.Paths[0]); err != nil {
+			journal.markJournalItemFailed(item.Paths[0], "file no longer exists on disk")
+			continue
+		}
+		switch item.Kind {
+		case string(UploadWorkSingle):
+			workItems = append(workItems, UploadWorkItem{
+				Kind:   UploadWorkSingle,
+				Single: &SingleMedia{Path: item.Paths[0]},
+			})
+		case string(UploadWorkLivePhoto):
+			if len(item.Paths) < 2 {
+				journal.markJournalItemFailed(item.Paths[0], "incomplete Live Photo pair in journal")
+				continue
+			}
+			workItems = append(workItems, UploadWorkItem{
+				Kind:      UploadWorkLivePhoto,
+				LivePhoto: &LivePhotoPair{PhotoPath: item.Paths[0], VideoPath: item.Paths[1]},
+			})
+		default:
+			journal.markJournalItemFailed(item.Paths[0], "unknown work kind in journal")
+		}
+	}
+
+	// Make the resumed batch visible immediately so the UI picks it up.
+	m.reporter.UploadStart(UploadBatchStart{Total: len(workItems)})
+
+	if len(workItems) == 0 {
+		// Everything already reached a terminal state; the journal is stale.
+		journal.Remove()
+		m.finish()
+		return true
+	}
+
+	go m.runWorkItems(workItems, opts, journal, 0)
+	return true
+}
+
+// runWorkItems runs the worker pipeline for an already-classified work list
+// and owns the journal for it. It is called from Upload and Resume and must
+// run in its own goroutine.
+func (m *UploadManager) runWorkItems(workItems []UploadWorkItem, opts UploadOptions, journal *UploadJournal, extraTotalBytes int64) {
 	if _, err := NewApi(opts.Api); err != nil {
 		for _, item := range workItems {
-			path := uploadWorkPrimaryPath(item)
-			m.reporter.FileResult(FileUploadResult{
+			paths := uploadWorkPaths(item)
+			result := FileUploadResult{
 				IsError:      true,
 				Error:        err,
 				ErrorMessage: err.Error(),
-				Path:         path,
-			})
+				Path:         uploadWorkPrimaryPath(item),
+				Paths:        paths,
+				Bytes:        sumPathSizes(paths),
+			}
+			m.reporter.FileResult(result)
+			journal.RecordResult(result)
 		}
+		journal.Save()
 		m.finish()
 		return
 	}
@@ -193,7 +341,7 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 				}
 			}
 		}
-		m.reporter.TotalBytes(totalBytes)
+		m.reporter.TotalBytes(totalBytes + extraTotalBytes)
 	}()
 
 	// Don't start more threads than files to process
@@ -202,6 +350,25 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 	// Create a worker pool for concurrent uploads
 	workChan := make(chan UploadWorkItem, len(workItems))
 	results := make(chan FileUploadResult, len(workItems))
+
+	// Sample disk-read throughput once per second for the GUI graph.
+	runStart := time.Now()
+	diskStop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		lastRead := DiskReadTotal()
+		for {
+			select {
+			case <-diskStop:
+				return
+			case <-ticker.C:
+				total := DiskReadTotal()
+				m.reporter.DiskRead(total - lastRead)
+				lastRead = total
+			}
+		}
+	}()
 
 	// Start workers
 	for i := range numWorkers {
@@ -233,18 +400,46 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 			close(results)
 		}()
 
-		// Process all results (this blocks until results channel is closed)
+			// Process all results (this blocks until results channel is closed)
+		lastJournalSave := time.Now()
+		consecutiveNetFails := 0
+		var runBytes, runFiles, runFails, runSkips int64
 		for result := range results {
 			m.reporter.FileResult(result)
-			if result.IsError {
+			journal.RecordResult(result)
+			if time.Since(lastJournalSave) >= journalSaveInterval {
+				journal.Save()
+				lastJournalSave = time.Now()
+			}
+			switch {
+			case result.IsError:
+				runFails++
 				m.logger.Error("upload error", "path", result.Path, "error", result.Error)
-			} else {
+				// Repeated network failures mean the connection is gone:
+				// pause the run instead of failing everything.
+				if isNetworkError(result.Error) {
+					consecutiveNetFails++
+					if m.autoResume && consecutiveNetFails >= networkPauseThreshold {
+						m.pauseRun("Internet connection lost. The upload paused and will resume automatically.")
+					}
+				} else {
+					consecutiveNetFails = 0
+				}
+			case result.Skipped:
+				runSkips++
+			default:
+				runFiles++
+				if result.Transferred {
+					runBytes += result.Bytes
+				}
+				consecutiveNetFails = 0
 				m.logger.Info("upload success", "path", result.Path)
 				if result.MediaKey != "" {
 					successfulUploads[result.Path] = result.MediaKey
 				}
 			}
 		}
+		close(diskStop)
 
 		m.logger.Info("upload complete", "successful", len(successfulUploads),
 			"albumName", opts.AlbumName, "albumAutoMode", opts.AlbumAutoMode)
@@ -252,6 +447,20 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 		if len(successfulUploads) > 0 {
 			m.handleAlbumCreation(successfulUploads, opts.AlbumName, opts.AlbumAutoMode)
 		}
+
+		m.mu.Lock()
+		if m.hashCache != nil {
+			m.hashCache.Save()
+		}
+		m.mu.Unlock()
+
+		if journal.Complete() {
+			journal.Remove()
+		} else {
+			journal.Save()
+		}
+
+		RecordUploadRun(runBytes, runFiles, runFails, runSkips, int64(time.Since(runStart).Seconds()))
 
 		m.finish()
 	}()
@@ -263,6 +472,69 @@ func (m *UploadManager) finish() {
 	m.mu.Lock()
 	m.running = false
 	m.mu.Unlock()
+}
+
+// networkPauseThreshold is how many consecutive network-classified failures
+// trigger a pause.
+const networkPauseThreshold = 3
+
+// pauseRun stops the in-flight run, keeps the journal, and schedules an
+// automatic resume once connectivity is back. Called from the results
+// goroutine; safe to call again after a pause already started.
+func (m *UploadManager) pauseRun(reason string) {
+	m.mu.Lock()
+	if m.paused || m.canceled {
+		m.mu.Unlock()
+		return
+	}
+	m.paused = true
+	if m.cancel != nil && !m.canceled {
+		close(m.cancel)
+		m.canceled = true
+	}
+	m.mu.Unlock()
+
+	m.reporter.UploadPaused(reason)
+	m.logger.Warn("upload paused", "reason", reason)
+
+	go m.waitAndResume()
+}
+
+// waitAndResume polls connectivity until the network is back, then resumes
+// the paused run from the journal.
+func (m *UploadManager) waitAndResume() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		m.mu.Lock()
+		paused := m.paused
+		running := m.running
+		autoResume := m.autoResume
+		m.mu.Unlock()
+		// The pause was resolved another way (user cancel or a new upload).
+		if !paused || !autoResume {
+			return
+		}
+		// Let the stopped run wind down so the journal is fully saved.
+		if running {
+			continue
+		}
+		if !probeConnectivity() {
+			continue
+		}
+		m.mu.Lock()
+		if !m.paused {
+			m.mu.Unlock()
+			return
+		}
+		m.paused = false
+		m.mu.Unlock()
+		m.logger.Info("network restored, resuming upload")
+		if !m.Resume() {
+			m.logger.Warn("resume after network pause failed")
+		}
+		return
+	}
 }
 
 func (m *UploadManager) reportPreflight(uploadItemCount int, warnings []PreflightWarning) {
@@ -295,6 +567,7 @@ func (m *UploadManager) reportPreflight(uploadItemCount int, warnings []Prefligh
 			SkipReason:  warning.Message,
 			Path:        primaryPath,
 			Paths:       warning.Paths,
+			Bytes:       sumPathSizes(warning.Paths),
 		})
 	}
 }
@@ -535,10 +808,13 @@ func UploadFile(ctx context.Context, api *Api, filePath string, opts UploadOptio
 	if reporter == nil {
 		reporter = NopReporter{}
 	}
-	return uploadSingleFile(ctx, api, filePath, opts, workerID, reporter)
+	mediaKey, _, err := uploadSingleFile(ctx, api, filePath, opts, workerID, reporter)
+	return mediaKey, err
 }
 
-func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts UploadOptions, workerID int, reporter UploadReporter) (string, error) {
+// uploadSingleFile returns the media key, whether the bytes were transferred
+// (false when the file was already in the library), and an error.
+func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts UploadOptions, workerID int, reporter UploadReporter) (string, bool, error) {
 	fileName := filepath.Base(filePath)
 	mediakey := ""
 
@@ -563,9 +839,9 @@ func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts Uploa
 		Message:  "Hashing...",
 	})
 
-	sha1_hash_bytes, err := CalculateSHA1(ctx, filePath)
+	sha1_hash_bytes, err := calculateSHA1Cached(ctx, filePath, opts.HashCache)
 	if err != nil {
-		return "", fmt.Errorf("error calculating hash file: %w", err)
+		return "", false, fmt.Errorf("error calculating hash file: %w", err)
 	}
 
 	sha1_hash_b64 := base64.StdEncoding.EncodeToString([]byte(sha1_hash_bytes))
@@ -601,16 +877,16 @@ func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts Uploa
 			})
 			if opts.DeleteFromHost {
 				if err := os.Remove(filePath); err != nil {
-					return mediakey, fmt.Errorf("file exists in library but failed to delete local copy: %w", err)
+					return mediakey, false, fmt.Errorf("file exists in library but failed to delete local copy: %w", err)
 				}
 			}
-			return mediakey, nil
+			return mediakey, false, nil
 		}
 	}
 
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return "", fmt.Errorf("error getting file info: %w", err)
+		return "", false, fmt.Errorf("error getting file info: %w", err)
 	}
 
 	// Stage 3: Uploading
@@ -627,7 +903,7 @@ func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts Uploa
 
 	token, err := api.GetUploadToken(sha1_hash_b64, fileSize)
 	if err != nil {
-		return "", fmt.Errorf("error uploading file: %w", err)
+		return "", false, fmt.Errorf("error uploading file: %w", err)
 	}
 
 	// Create progress callback for upload
@@ -650,11 +926,11 @@ func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts Uploa
 
 	finalizeToken, err := api.UploadFileWithProgress(ctx, filePath, token, progressCallback)
 	if err != nil {
-		return "", fmt.Errorf("error uploading file: %w", err)
+		return "", false, fmt.Errorf("error uploading file: %w", err)
 	}
 	commitToken, err := finalizeToken.legacyCommitToken()
 	if err != nil {
-		return "", fmt.Errorf("error decoding upload finalize token: %w", err)
+		return "", false, fmt.Errorf("error decoding upload finalize token: %w", err)
 	}
 
 	// Stage 4: Finalizing
@@ -668,20 +944,20 @@ func uploadSingleFile(ctx context.Context, api *Api, filePath string, opts Uploa
 
 	mediaKey, err := api.CommitUpload(commitToken, fileInfo.Name(), sha1_hash_bytes, uploadTimestamp)
 	if err != nil {
-		return "", fmt.Errorf("error committing file: %w", err)
+		return "", false, fmt.Errorf("error committing file: %w", err)
 	}
 
 	if len(mediaKey) == 0 {
-		return "", fmt.Errorf("media key not received")
+		return "", false, fmt.Errorf("media key not received")
 	}
 
 	if opts.DeleteFromHost {
 		if err := os.Remove(filePath); err != nil {
-			return mediaKey, fmt.Errorf("uploaded successfully but failed to delete file: %w", err)
+			return mediaKey, true, fmt.Errorf("uploaded successfully but failed to delete file: %w", err)
 		}
 	}
 
-	return mediaKey, nil
+	return mediaKey, true, nil
 }
 
 func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, results chan<- FileUploadResult, opts UploadOptions) {
@@ -729,9 +1005,9 @@ func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, 
 			path := uploadWorkPrimaryPath(item)
 			paths := uploadWorkPaths(item)
 			isLivePhoto := item.Kind == UploadWorkLivePhoto
-			mediaKey, skipped, err := uploadWorkItem(ctx, api, item, opts, workerID, m.reporter)
+			mediaKey, transferred, skipped, err := uploadWorkItem(ctx, api, item, opts, workerID, m.reporter)
 			if err != nil && mediaKey != "" {
-				results <- FileUploadResult{IsLivePhoto: isLivePhoto, Path: path, Paths: paths, MediaKey: mediaKey}
+				results <- FileUploadResult{IsLivePhoto: isLivePhoto, Path: path, Paths: paths, MediaKey: mediaKey, Bytes: sumPathSizes(paths), Transferred: true}
 				m.reporter.Warning(PreflightWarning{
 					Paths:   paths,
 					Code:    "local-cleanup-failed",
@@ -745,7 +1021,7 @@ func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, 
 					Message:  fmt.Sprintf("Uploaded, but local cleanup failed: %v", err),
 				})
 			} else if err != nil {
-				results <- FileUploadResult{IsError: true, IsLivePhoto: isLivePhoto, Error: err, ErrorMessage: err.Error(), Path: path, Paths: paths}
+				results <- FileUploadResult{IsError: true, IsLivePhoto: isLivePhoto, Error: err, ErrorMessage: err.Error(), Path: path, Paths: paths, Bytes: sumPathSizes(paths)}
 				m.reporter.ThreadStatus(ThreadStatus{
 					WorkerID: workerID,
 					Status:   "error",
@@ -760,6 +1036,8 @@ func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, 
 					skipCode = "remote-live-photo-component-exists"
 					skipReason = "Skipped because a Live Photo component already exists remotely"
 				}
+				// No Bytes here: uploadLivePhotoWithCallback already shrank the
+				// reported total with a TotalBytesDelta for these skips.
 				results <- FileUploadResult{
 					IsLivePhoto: isLivePhoto,
 					Skipped:     true,
@@ -769,7 +1047,7 @@ func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, 
 					Paths:       paths,
 				}
 			} else {
-				results <- FileUploadResult{IsLivePhoto: isLivePhoto, Path: path, Paths: paths, MediaKey: mediaKey}
+				results <- FileUploadResult{IsLivePhoto: isLivePhoto, Path: path, Paths: paths, MediaKey: mediaKey, Bytes: sumPathSizes(paths), Transferred: transferred}
 				m.reporter.ThreadStatus(ThreadStatus{
 					WorkerID: workerID,
 					Status:   "completed",
@@ -797,26 +1075,31 @@ func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, 
 	})
 }
 
-func uploadWorkItem(ctx context.Context, api *Api, item UploadWorkItem, opts UploadOptions, workerID int, reporter UploadReporter) (string, bool, error) {
+func uploadWorkItem(ctx context.Context, api *Api, item UploadWorkItem, opts UploadOptions, workerID int, reporter UploadReporter) (string, bool, bool, error) {
 	switch item.Kind {
 	case UploadWorkSingle:
 		if item.Single == nil || item.LivePhoto != nil {
-			return "", false, fmt.Errorf("invalid single-media work item")
+			return "", false, false, fmt.Errorf("invalid single-media work item")
 		}
-		mediaKey, err := uploadSingleFile(ctx, api, item.Single.Path, opts, workerID, reporter)
-		return mediaKey, false, err
+		mediaKey, transferred, err := uploadSingleFile(ctx, api, item.Single.Path, opts, workerID, reporter)
+		return mediaKey, transferred, false, err
 	case UploadWorkLivePhoto:
 		if item.LivePhoto == nil || item.Single != nil {
-			return "", false, fmt.Errorf("invalid Live Photo work item")
+			return "", false, false, fmt.Errorf("invalid Live Photo work item")
 		}
-		return uploadLivePhotoWithCallback(ctx, api, *item.LivePhoto, LivePhotoUploadOptions{
+		mediaKey, skipped, err := uploadLivePhotoWithCallback(ctx, api, *item.LivePhoto, LivePhotoUploadOptions{
 			Policy:                     buildLivePhotoCommitPolicy(api),
 			DeleteFromHost:             opts.DeleteFromHost,
 			SetDateFromFilename:        opts.SetDateFromFilename,
 			UpdateExistingPhotosToLive: opts.UpdateExistingPhotosToLive,
+			HashCache:                  opts.HashCache,
 		}, workerID, reporter)
+		// Transferred is false for skipped pairs; their bytes left the total
+		// through a TotalBytesDelta inside the Live Photo upload.
+		transferred := err == nil && !skipped && mediaKey != ""
+		return mediaKey, transferred, skipped, err
 	default:
-		return "", false, fmt.Errorf("unsupported upload work kind %q", item.Kind)
+		return "", false, false, fmt.Errorf("unsupported upload work kind %q", item.Kind)
 	}
 }
 
@@ -836,4 +1119,15 @@ func uploadWorkPrimaryPath(item UploadWorkItem) string {
 		return ""
 	}
 	return paths[0]
+}
+
+// sumPathSizes stats every path and returns the total size, ignoring failures.
+func sumPathSizes(paths []string) int64 {
+	var total int64
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
 }

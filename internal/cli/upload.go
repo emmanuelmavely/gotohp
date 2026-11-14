@@ -323,6 +323,16 @@ func (r teaReporter) UploadStop() {
 func (r teaReporter) TotalBytes(int64)      {}
 func (r teaReporter) TotalBytesDelta(int64) {}
 
+func (r teaReporter) UploadPaused(reason string) {
+	r.p.Send(preflightWarningMsg{
+		paths:   nil,
+		code:    "upload-paused",
+		message: reason,
+	})
+}
+
+func (r teaReporter) DiskRead(int64) {}
+
 func (r teaReporter) Warning(warning core.PreflightWarning) {
 	r.p.Send(preflightWarningMsg{
 		paths:   warning.Paths,
@@ -387,7 +397,7 @@ func newLogger(level slog.Level) *slog.Logger {
 
 // runUpload runs the upload with already-resolved options and prints a JSON
 // summary when it completes.
-func runUpload(paths []string, opts core.UploadOptions, settings uploadRunSettings) error {
+func runUpload(paths []string, opts core.UploadOptions, settings uploadRunSettings, resume bool) error {
 	model := initialModel()
 	programOptions := []tea.ProgramOption{}
 	if !shouldUseTUI(settings) {
@@ -400,7 +410,14 @@ func runUpload(paths []string, opts core.UploadOptions, settings uploadRunSettin
 	p := tea.NewProgram(model, programOptions...)
 
 	uploadManager := core.NewUploadManager(teaReporter{p: p}, newLogger(parseLogLevel(settings.logLevel)))
-	go uploadManager.Upload(paths, opts)
+	if resume {
+		// The journal's stored options drive the run; paths and opts are ignored.
+		if !uploadManager.Resume() {
+			return fmt.Errorf("no interrupted upload to resume")
+		}
+	} else {
+		go uploadManager.Upload(paths, opts)
+	}
 
 	// Run until the upload manager reports UploadStop.
 	finalModel, err := p.Run()

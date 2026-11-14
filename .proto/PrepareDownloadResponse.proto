@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+// Response of PhotosPrepareDownload. Only the verified download-URL path is
+// modeled: 1.5.2.5 is the URL of the file with applied edits (if any),
+// 1.5.2.6 the URL of the original file.
+message PrepareDownloadResponse {
+  message field1_type {
+    message field5_type {
+      message field2_type {
+        string edited_url = 5;
+        string original_url = 6;
+      }
+      field2_type field2 = 2;
+    }
+    field5_type field5 = 5;
+  }
+
+  field1_type field1 = 1;
+}

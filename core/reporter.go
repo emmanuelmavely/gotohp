@@ -13,6 +13,13 @@ type UploadReporter interface {
 	Warning(PreflightWarning)
 	ThreadStatus(ThreadStatus)
 	FileResult(FileUploadResult)
+	// UploadPaused is emitted when a run stops early because the network
+	// went away; the journal keeps the unprocessed items for resume.
+	UploadPaused(reason string)
+	// DiskRead reports bytes read from local files during the last sampling
+	// interval, for the GUI's disk throughput graph. Only the GUI reporter
+	// forwards it.
+	DiskRead(delta int64)
 	AlbumProgress(AlbumStatus)
 	AlbumComplete(AlbumStatus)
 	AlbumError(AlbumError)
@@ -28,6 +35,8 @@ func (NopReporter) TotalBytesDelta(int64)        {}
 func (NopReporter) Warning(PreflightWarning)     {}
 func (NopReporter) ThreadStatus(ThreadStatus)    {}
 func (NopReporter) FileResult(FileUploadResult)  {}
+func (NopReporter) UploadPaused(string)          {}
+func (NopReporter) DiskRead(int64)               {}
 func (NopReporter) AlbumProgress(AlbumStatus)    {}
 func (NopReporter) AlbumComplete(AlbumStatus)    {}
 func (NopReporter) AlbumError(AlbumError)        {}
