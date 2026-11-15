@@ -204,6 +204,9 @@ type LivePhotoRepairReport struct {
 	Ambiguous  []string                   `json:"Ambiguous"`
 	// Excluded names have a photo and a video that are not safe to join.
 	Excluded []LivePhotoExclusion `json:"Excluded"`
+	// AlreadyRepaired pairs were joined before; Google still lists their
+	// motion part as a separate video.
+	AlreadyRepaired []LivePhotoAlreadyRepaired `json:"AlreadyRepaired"`
 }
 
 // AccountStorage summarizes the account's remote library. It is what the
@@ -256,10 +259,16 @@ func (a *Api) RefreshAccountStorageWithProgress(onPage func(LibrarySyncStats)) (
 	}, nil
 }
 
-// FindLivePhotoRepairReport matches the library's orphan pairs.
+// FindLivePhotoRepairReport matches the library's orphan pairs, leaving out
+// the ones the repair ledger or the bin show as already repaired.
 func FindLivePhotoRepairReport(items []*RemoteMediaItem) LivePhotoRepairReport {
+	return findLivePhotoRepairReport(items, LoadLivePhotoRepairLedger())
+}
+
+func findLivePhotoRepairReport(items []*RemoteMediaItem, ledger LivePhotoRepairLedger) LivePhotoRepairReport {
 	candidates, ambiguous, excluded := FindLivePhotoRepairCandidates(items)
-	return LivePhotoRepairReport{Candidates: candidates, Ambiguous: ambiguous, Excluded: excluded}
+	open, repaired := separateAlreadyRepaired(candidates, items, ledger)
+	return LivePhotoRepairReport{Candidates: open, Ambiguous: ambiguous, Excluded: excluded, AlreadyRepaired: repaired}
 }
 
 // LivePhotoRepairOutcome reports what one repair attempt did.
@@ -428,6 +437,8 @@ func (a *Api) RepairLivePhotoPairs(ctx context.Context, candidates []LivePhotoRe
 		uploadSeconds += int64(result.uploadTime.Round(time.Second) / time.Second)
 		if result.outcome.Status == "repaired" {
 			repaired++
+			// Remember the pair so later scans do not offer it again.
+			_ = RecordRepairedLivePhoto(repairedEntry(candidate, time.Now()))
 		}
 		if onProgress != nil {
 			outcome := result.outcome
@@ -501,6 +512,9 @@ func (a *Api) repairOne(ctx context.Context, candidate LivePhotoRepairCandidate,
 	}
 	if candidate.Photo == nil || candidate.Video == nil {
 		return finish("skipped", nil, "incomplete candidate")
+	}
+	if candidate.Photo.HasMotion {
+		return finish("skipped", nil, "%s is already a Live Photo; nothing to repair", candidate.Photo.FileName)
 	}
 
 	if len(candidate.Photo.Sha1) != sha1.Size {

@@ -62,6 +62,9 @@ type RemoteMediaItem struct {
 	// UTCTimestamp is when the item was taken, in milliseconds since the Unix
 	// epoch. Photos keep the milliseconds; videos are rounded to seconds.
 	UTCTimestamp int64
+	// HasMotion is true for a photo stored with a motion part: a Live Photo
+	// or motion photo, reported at item path 5.5.2.4 (micro video).
+	HasMotion bool `json:",omitempty"`
 }
 
 // LibrarySyncPage is one parsed library sync response.
@@ -192,7 +195,51 @@ func parseRemoteMediaItem(pbItem *generated.LibrarySyncResponseMediaItemType) *R
 		}
 	}
 	item.DedupKey = deriveDedupKey(field2, item.MediaKey)
+	item.HasMotion = hasMicroVideo(pbItem.GetField5())
 	return item
+}
+
+// hasMicroVideo reports whether the item's type container (path 5) carries
+// micro video data at 5.5.2.4, which marks a photo with a motion part. The
+// path is not modeled in the proto schema, so it is read from the unknown
+// fields.
+func hasMicroVideo(field5 *generated.LibrarySyncResponseMediaItemTypeField5Type) bool {
+	if field5 == nil {
+		return false
+	}
+	return hasProtoPath(field5.ProtoReflect().GetUnknown(), 5, 2, 4)
+}
+
+// hasProtoPath reports whether raw protobuf bytes contain a length-delimited
+// field at the given path of field numbers.
+func hasProtoPath(data []byte, path ...protowire.Number) bool {
+	if len(path) == 0 {
+		return true
+	}
+	for len(data) > 0 {
+		num, wireType, tagLen := protowire.ConsumeTag(data)
+		if tagLen < 0 {
+			return false
+		}
+		data = data[tagLen:]
+		if wireType == protowire.BytesType {
+			value, valueLen := protowire.ConsumeBytes(data)
+			if valueLen < 0 {
+				return false
+			}
+			if num == path[0] && hasProtoPath(value, path[1:]...) {
+				return true
+			}
+			data = data[valueLen:]
+			continue
+		}
+		valueLen := protowire.ConsumeFieldValue(num, wireType, data)
+		if valueLen < 0 {
+			return false
+		}
+		data = data[valueLen:]
+	}
+	return false
 }
 
 // deriveDedupKey recovers the item's dedup key: the server sends it in the

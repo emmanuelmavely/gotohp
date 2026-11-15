@@ -28,11 +28,21 @@ export function AccountStorage(): $CancellablePromise<core$0.AccountStorage> {
 }
 
 /**
+ * Bin lists the items in the library's bin, marking the videos the Live
+ * Photo repair put there. It only reads; nothing is restored or deleted.
+ */
+export function Bin(): $CancellablePromise<core$0.BinReport> {
+    return $Call.ByID(3068495119).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
  * LivePhotoRepairs lists the orphan Live Photo pairs found in the library.
  */
 export function LivePhotoRepairs(): $CancellablePromise<core$0.LivePhotoRepairReport> {
     return $Call.ByID(3507459294).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType2($result);
     });
 }
 
@@ -44,7 +54,7 @@ export function LivePhotoRepairs(): $CancellablePromise<core$0.LivePhotoRepairRe
  */
 export function RepairLivePhotos(stems: string[]): $CancellablePromise<core$0.LivePhotoRepairOutcome[]> {
     return $Call.ByID(1807870720, stems).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType4($result);
     });
 }
 
@@ -53,13 +63,14 @@ export function RepairLivePhotos(stems: string[]): $CancellablePromise<core$0.Li
  */
 export function UploadStats(): $CancellablePromise<core$0.UploadStats> {
     return $Call.ByID(1517743466).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
 // Private type creation functions
 const $$createType0 = core$0.AccountStorage.createFrom;
-const $$createType1 = core$0.LivePhotoRepairReport.createFrom;
-const $$createType2 = core$0.LivePhotoRepairOutcome.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = core$0.UploadStats.createFrom;
+const $$createType1 = core$0.BinReport.createFrom;
+const $$createType2 = core$0.LivePhotoRepairReport.createFrom;
+const $$createType3 = core$0.LivePhotoRepairOutcome.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = core$0.UploadStats.createFrom;

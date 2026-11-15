@@ -46,6 +46,8 @@ import Upload from './Upload.vue'
 import { uploadManager } from './utils/UploadManager'
 import Toaster from './components/ui/sonner/Sonner.vue'
 import DebugPanel from './components/DebugPanel.vue'
+import UpdateBanner from './components/UpdateBanner.vue'
+import { maybeAutoCheckForUpdates } from './utils/appUpdate'
 import MediaThumb from './components/MediaThumb.vue'
 import { thumbnailsActive } from './utils/thumbnails'
 import {
@@ -423,6 +425,8 @@ function openAccountSetup() {
 
 onMounted(async () => {
   await Promise.all([refreshCredentials(), refreshPrefs()])
+  // At most once a day, and quietly unless a newer release exists.
+  void maybeAutoCheckForUpdates()
 })
 
 const handleCopyClick = () => {
@@ -673,6 +677,9 @@ onUnmounted(() => {
         </Button>
       </div>
     </header>
+
+    <!-- A newer release on GitHub -->
+    <UpdateBanner />
 
     <!-- Storage really used by the selected account -->
     <div

@@ -20,6 +20,9 @@ type Info struct {
 	// HasGUI reports whether running without a command opens the GUI.
 	HasGUI  bool
 	Version string
+	// Commit and BuildDate are set on release builds.
+	Commit    string
+	BuildDate string
 }
 
 // IsCLIInvocation reports whether args (excluding the program name) address
@@ -85,6 +88,9 @@ func newRootCommand(info Info) *cobra.Command {
 		Args:  cobra.NoArgs,
 		Run: func(*cobra.Command, []string) {
 			fmt.Printf("gotohp v%s\n", info.Version)
+			if info.Commit != "" {
+				fmt.Printf("commit %s, built %s\n", info.Commit, info.BuildDate)
+			}
 		},
 	})
 	return root

@@ -31,10 +31,13 @@ var title = "gotohp v" + getAppVersion()
 func main() {
 	// Run the CLI when the arguments name one of its commands; otherwise start the GUI.
 	if cli.IsCLIInvocation(os.Args[1:]) {
+		build := getBuildInfo()
 		os.Exit(cli.Run(os.Args[1:], cli.Info{
 			ExecutableName: "gotohp",
 			HasGUI:         true,
 			Version:        getAppVersion(),
+			Commit:         build.Commit,
+			BuildDate:      build.Date,
 		}))
 	}
 
@@ -50,6 +53,12 @@ func runGUI() {
 	configManager := &core.ConfigManager{}
 	dialogService := gui.NewDialogService()
 	libraryService := gui.NewLibraryService()
+	build := getBuildInfo()
+	appService := gui.NewAppService(gui.AppInfo{
+		Version:   getAppVersion(),
+		Commit:    build.Commit,
+		BuildDate: build.Date,
+	}, getChangelog())
 	previews := preview.New()
 	wailsApp := application.New(application.Options{
 		Name:        "com.xob0t.gotohp",
@@ -58,6 +67,7 @@ func runGUI() {
 			application.NewService(configManager),
 			application.NewService(dialogService),
 			application.NewService(libraryService),
+			application.NewService(appService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),

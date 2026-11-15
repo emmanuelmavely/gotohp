@@ -197,6 +197,135 @@ export class AlbumStatus {
     }
 }
 
+/**
+ * BinItem is one library item in the bin.
+ */
+export class BinItem {
+    "MediaKey": string;
+    "FileName": string;
+    "IsVideo": boolean;
+    "SizeBytes": number;
+
+    /**
+     * TrashedAt and DeletesAt are Unix milliseconds; 0 when unknown.
+     */
+    "TrashedAt": number;
+    "DeletesAt": number;
+
+    /**
+     * RepairedPhoto names the still this video was linked to when the Live
+     * Photo repair put it in the bin; empty otherwise.
+     */
+    "RepairedPhoto": string;
+    "RepairedPhotoMediaKey": string;
+
+    /**
+     * RepairGuessed is true when no record of the repair exists (it ran
+     * before the ledger did) but the video looks like a repaired orphan: a
+     * .mov whose content is still in the library next to a photo of the
+     * same name.
+     */
+    "RepairGuessed": boolean;
+
+    /**
+     * CopyInLibrary is true when another item with the same content is still
+     * in the library (outside the bin).
+     */
+    "CopyInLibrary": boolean;
+
+    /**
+     * Shared is true for items from shared albums or a partner's library.
+     */
+    "Shared": boolean;
+
+    /** Creates a new BinItem instance. */
+    constructor($$source: Partial<BinItem> = {}) {
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("IsVideo" in $$source)) {
+            this["IsVideo"] = false;
+        }
+        if (!("SizeBytes" in $$source)) {
+            this["SizeBytes"] = 0;
+        }
+        if (!("TrashedAt" in $$source)) {
+            this["TrashedAt"] = 0;
+        }
+        if (!("DeletesAt" in $$source)) {
+            this["DeletesAt"] = 0;
+        }
+        if (!("RepairedPhoto" in $$source)) {
+            this["RepairedPhoto"] = "";
+        }
+        if (!("RepairedPhotoMediaKey" in $$source)) {
+            this["RepairedPhotoMediaKey"] = "";
+        }
+        if (!("RepairGuessed" in $$source)) {
+            this["RepairGuessed"] = false;
+        }
+        if (!("CopyInLibrary" in $$source)) {
+            this["CopyInLibrary"] = false;
+        }
+        if (!("Shared" in $$source)) {
+            this["Shared"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BinItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BinItem {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BinItem($$parsedSource as Partial<BinItem>);
+    }
+}
+
+/**
+ * BinReport lists the bin, newest first.
+ */
+export class BinReport {
+    "Items": BinItem[];
+    "TotalBytes": number;
+
+    /**
+     * FromRepair counts the items the Live Photo repair put in the bin.
+     */
+    "FromRepair": number;
+
+    /** Creates a new BinReport instance. */
+    constructor($$source: Partial<BinReport> = {}) {
+        if (!("Items" in $$source)) {
+            this["Items"] = [];
+        }
+        if (!("TotalBytes" in $$source)) {
+            this["TotalBytes"] = 0;
+        }
+        if (!("FromRepair" in $$source)) {
+            this["FromRepair"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BinReport instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BinReport {
+        const $$createField0_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Items" in $$parsedSource) {
+            $$parsedSource["Items"] = $$createField0_0($$parsedSource["Items"]);
+        }
+        return new BinReport($$parsedSource as Partial<BinReport>);
+    }
+}
+
 export class FileUploadResult {
     "MediaKey": string;
     "IsError": boolean;
@@ -376,6 +505,43 @@ export class LibrarySyncStats {
 }
 
 /**
+ * LivePhotoAlreadyRepaired is a pair that looks like an orphan but was
+ * already joined: Google still lists the motion part as its own video.
+ */
+export class LivePhotoAlreadyRepaired {
+    "Stem": string;
+    "PhotoFileName": string;
+    "PhotoMediaKey": string;
+    "Reason": string;
+
+    /** Creates a new LivePhotoAlreadyRepaired instance. */
+    constructor($$source: Partial<LivePhotoAlreadyRepaired> = {}) {
+        if (!("Stem" in $$source)) {
+            this["Stem"] = "";
+        }
+        if (!("PhotoFileName" in $$source)) {
+            this["PhotoFileName"] = "";
+        }
+        if (!("PhotoMediaKey" in $$source)) {
+            this["PhotoMediaKey"] = "";
+        }
+        if (!("Reason" in $$source)) {
+            this["Reason"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LivePhotoAlreadyRepaired instance from a string or object.
+     */
+    static createFrom($$source: any = {}): LivePhotoAlreadyRepaired {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LivePhotoAlreadyRepaired($$parsedSource as Partial<LivePhotoAlreadyRepaired>);
+    }
+}
+
+/**
  * LivePhotoExclusion is a name that has a photo and a video but is not offered
  * for repair, with the reason.
  */
@@ -434,8 +600,8 @@ export class LivePhotoRepairCandidate {
      * Creates a new LivePhotoRepairCandidate instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePhotoRepairCandidate {
-        const $$createField1_0 = $$createType5;
-        const $$createField2_0 = $$createType5;
+        const $$createField1_0 = $$createType7;
+        const $$createField2_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Photo" in $$parsedSource) {
             $$parsedSource["Photo"] = $$createField1_0($$parsedSource["Photo"]);
@@ -556,7 +722,7 @@ export class LivePhotoRepairProgress {
      * Creates a new LivePhotoRepairProgress instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePhotoRepairProgress {
-        const $$createField7_0 = $$createType7;
+        const $$createField7_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Outcome" in $$parsedSource) {
             $$parsedSource["Outcome"] = $$createField7_0($$parsedSource["Outcome"]);
@@ -577,6 +743,12 @@ export class LivePhotoRepairReport {
      */
     "Excluded": LivePhotoExclusion[];
 
+    /**
+     * AlreadyRepaired pairs were joined before; Google still lists their
+     * motion part as a separate video.
+     */
+    "AlreadyRepaired": LivePhotoAlreadyRepaired[];
+
     /** Creates a new LivePhotoRepairReport instance. */
     constructor($$source: Partial<LivePhotoRepairReport> = {}) {
         if (!("Candidates" in $$source)) {
@@ -588,6 +760,9 @@ export class LivePhotoRepairReport {
         if (!("Excluded" in $$source)) {
             this["Excluded"] = [];
         }
+        if (!("AlreadyRepaired" in $$source)) {
+            this["AlreadyRepaired"] = [];
+        }
 
         Object.assign(this, $$source);
     }
@@ -596,9 +771,10 @@ export class LivePhotoRepairReport {
      * Creates a new LivePhotoRepairReport instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePhotoRepairReport {
-        const $$createField0_0 = $$createType9;
+        const $$createField0_0 = $$createType11;
         const $$createField1_0 = $$createType3;
-        const $$createField2_0 = $$createType11;
+        const $$createField2_0 = $$createType13;
+        const $$createField3_0 = $$createType15;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Candidates" in $$parsedSource) {
             $$parsedSource["Candidates"] = $$createField0_0($$parsedSource["Candidates"]);
@@ -608,6 +784,9 @@ export class LivePhotoRepairReport {
         }
         if ("Excluded" in $$parsedSource) {
             $$parsedSource["Excluded"] = $$createField2_0($$parsedSource["Excluded"]);
+        }
+        if ("AlreadyRepaired" in $$parsedSource) {
+            $$parsedSource["AlreadyRepaired"] = $$createField3_0($$parsedSource["AlreadyRepaired"]);
         }
         return new LivePhotoRepairReport($$parsedSource as Partial<LivePhotoRepairReport>);
     }
@@ -806,6 +985,38 @@ export class QuotaSummary {
 }
 
 /**
+ * ReleaseAsset is one downloadable file of a release.
+ */
+export class ReleaseAsset {
+    "Name": string;
+    "URL": string;
+    "Size": number;
+
+    /** Creates a new ReleaseAsset instance. */
+    constructor($$source: Partial<ReleaseAsset> = {}) {
+        if (!("Name" in $$source)) {
+            this["Name"] = "";
+        }
+        if (!("URL" in $$source)) {
+            this["URL"] = "";
+        }
+        if (!("Size" in $$source)) {
+            this["Size"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ReleaseAsset instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ReleaseAsset {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ReleaseAsset($$parsedSource as Partial<ReleaseAsset>);
+    }
+}
+
+/**
  * RemoteMediaItem is one media item as reported by the library sync.
  */
 export class RemoteMediaItem {
@@ -842,6 +1053,12 @@ export class RemoteMediaItem {
      * epoch. Photos keep the milliseconds; videos are rounded to seconds.
      */
     "UTCTimestamp": number;
+
+    /**
+     * HasMotion is true for a photo stored with a motion part: a Live Photo
+     * or motion photo, reported at item path 5.5.2.4 (micro video).
+     */
+    "HasMotion"?: boolean;
 
     /** Creates a new RemoteMediaItem instance. */
     constructor($$source: Partial<RemoteMediaItem> = {}) {
@@ -986,6 +1203,87 @@ export class ThreadStatus {
     static createFrom($$source: any = {}): ThreadStatus {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new ThreadStatus($$parsedSource as Partial<ThreadStatus>);
+    }
+}
+
+/**
+ * UpdateInfo is the result of an update check.
+ */
+export class UpdateInfo {
+    /**
+     * Current is the running version, Latest the newest release's version
+     * (both without a leading "v"). Latest is empty when the repository has
+     * no releases yet.
+     */
+    "Current": string;
+    "Latest": string;
+
+    /**
+     * Newer is true when Latest is a higher version than Current.
+     */
+    "Newer": boolean;
+
+    /**
+     * Name and Notes are the release title and its notes (Markdown).
+     */
+    "Name": string;
+    "Notes": string;
+
+    /**
+     * URL is the release page.
+     */
+    "URL": string;
+
+    /**
+     * PublishedAt and CheckedAt are Unix milliseconds.
+     */
+    "PublishedAt": number;
+    "CheckedAt": number;
+    "Assets": ReleaseAsset[];
+
+    /** Creates a new UpdateInfo instance. */
+    constructor($$source: Partial<UpdateInfo> = {}) {
+        if (!("Current" in $$source)) {
+            this["Current"] = "";
+        }
+        if (!("Latest" in $$source)) {
+            this["Latest"] = "";
+        }
+        if (!("Newer" in $$source)) {
+            this["Newer"] = false;
+        }
+        if (!("Name" in $$source)) {
+            this["Name"] = "";
+        }
+        if (!("Notes" in $$source)) {
+            this["Notes"] = "";
+        }
+        if (!("URL" in $$source)) {
+            this["URL"] = "";
+        }
+        if (!("PublishedAt" in $$source)) {
+            this["PublishedAt"] = 0;
+        }
+        if (!("CheckedAt" in $$source)) {
+            this["CheckedAt"] = 0;
+        }
+        if (!("Assets" in $$source)) {
+            this["Assets"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UpdateInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UpdateInfo {
+        const $$createField8_0 = $$createType17;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Assets" in $$parsedSource) {
+            $$parsedSource["Assets"] = $$createField8_0($$parsedSource["Assets"]);
+        }
+        return new UpdateInfo($$parsedSource as Partial<UpdateInfo>);
     }
 }
 
@@ -1137,7 +1435,7 @@ export class UploadStats {
      * Creates a new UploadStats instance from a string or object.
      */
     static createFrom($$source: any = {}): UploadStats {
-        const $$createField9_0 = $$createType12;
+        const $$createField9_0 = $$createType18;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("daily" in $$parsedSource) {
             $$parsedSource["daily"] = $$createField9_0($$parsedSource["daily"]);
@@ -1175,12 +1473,18 @@ const $$createType0 = QuotaSummary.createFrom;
 const $$createType1 = AccountSummary.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = $Create.Array($Create.Any);
-const $$createType4 = RemoteMediaItem.createFrom;
-const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = LivePhotoRepairOutcome.createFrom;
+const $$createType4 = BinItem.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = RemoteMediaItem.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
-const $$createType8 = LivePhotoRepairCandidate.createFrom;
-const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = LivePhotoExclusion.createFrom;
+const $$createType8 = LivePhotoRepairOutcome.createFrom;
+const $$createType9 = $Create.Nullable($$createType8);
+const $$createType10 = LivePhotoRepairCandidate.createFrom;
 const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = $Create.Map($Create.Any, $Create.Any);
+const $$createType12 = LivePhotoExclusion.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = LivePhotoAlreadyRepaired.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = ReleaseAsset.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = $Create.Map($Create.Any, $Create.Any);

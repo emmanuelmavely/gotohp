@@ -12,6 +12,7 @@ import type {
 import { Button } from '@/components/ui/button'
 import LibraryScanLive from '@/components/LibraryScanLive.vue'
 import LivePhotoRepairLive from '@/components/LivePhotoRepairLive.vue'
+import BinPanel from '@/components/BinPanel.vue'
 import { liveRepair, runLivePhotoRepair } from '@/utils/liveRepair'
 import { openInGooglePhotos } from '@/utils/googlePhotos'
 import {
@@ -144,6 +145,16 @@ interface RepairExclusion {
 }
 const excluded = computed<RepairExclusion[]>(() =>
   (report.value as (LivePhotoRepairReport & { Excluded?: RepairExclusion[] | null }) | null)?.Excluded ?? [],
+)
+/** Pairs joined before; Google still lists their motion part as a separate video. */
+interface AlreadyRepaired {
+  Stem: string
+  PhotoFileName: string
+  PhotoMediaKey: string
+  Reason: string
+}
+const alreadyRepaired = computed<AlreadyRepaired[]>(() =>
+  (report.value as (LivePhotoRepairReport & { AlreadyRepaired?: AlreadyRepaired[] | null }) | null)?.AlreadyRepaired ?? [],
 )
 const allSelected = computed(() =>
   candidates.value.length > 0 && selectedStems.value.length === candidates.value.length,
@@ -497,6 +508,36 @@ async function repairSelected() {
           </p>
 
           <details
+            v-if="alreadyRepaired.length"
+            class="mt-2 text-[11px] leading-snug text-muted-foreground"
+          >
+            <summary class="cursor-pointer select-none hover:text-foreground">
+              {{ alreadyRepaired.length }} already a Live Photo, so not offered again
+            </summary>
+            <ul class="mt-1.5 max-h-40 divide-y overflow-y-auto rounded-lg border">
+              <li
+                v-for="done in alreadyRepaired"
+                :key="done.Stem"
+                class="flex items-start gap-1.5 px-2.5 py-1.5"
+              >
+                <span class="min-w-0 flex-1">
+                  <span class="text-foreground">{{ done.PhotoFileName || done.Stem }}</span> · {{ done.Reason }}
+                </span>
+                <button
+                  v-if="done.PhotoMediaKey"
+                  type="button"
+                  class="flex shrink-0 cursor-pointer items-center rounded p-0.5 hover:bg-accent hover:text-foreground"
+                  title="Open the photo in Google Photos"
+                  :aria-label="`Open ${done.PhotoFileName || done.Stem} in Google Photos`"
+                  @click="openInGooglePhotos(done.PhotoMediaKey)"
+                >
+                  <ExternalLink class="size-3" />
+                </button>
+              </li>
+            </ul>
+          </details>
+
+          <details
             v-if="excluded.length"
             class="mt-2 text-[11px] leading-snug text-muted-foreground"
           >
@@ -562,5 +603,8 @@ async function repairSelected() {
         </ul>
       </div>
     </section>
+
+    <!-- Bin -->
+    <BinPanel />
   </div>
 </template>

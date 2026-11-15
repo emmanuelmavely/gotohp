@@ -10,7 +10,9 @@ import (
 )
 
 // LibraryIndexVersion is the current on-disk format of the library index.
-const LibraryIndexVersion = 1
+// Version 2 added HasMotion; an older index is replaced by a full scan,
+// because a delta sync would never fill the field for unchanged items.
+const LibraryIndexVersion = 2
 
 // LibraryIndex persists the remote library's media items together with the
 // sync token of the last sync cycle. With the token the server only reports

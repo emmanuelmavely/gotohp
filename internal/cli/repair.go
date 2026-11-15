@@ -95,10 +95,13 @@ Without --execute the command only reports what it would repair.`,
 			report := core.FindLivePhotoRepairReport(index.Items)
 			candidates, ambiguous := report.Candidates, report.Ambiguous
 			if asJSON {
-				return printRepairJSON(candidates, ambiguous, report.Excluded)
+				return printRepairJSON(candidates, ambiguous, report.Excluded, report.AlreadyRepaired)
 			}
 			for _, exclusion := range report.Excluded {
 				fmt.Printf("? %s: skipped, %s\n", exclusion.Stem, exclusion.Reason)
+			}
+			for _, done := range report.AlreadyRepaired {
+				fmt.Printf("? %s: already a Live Photo, %s\n", done.Stem, done.Reason)
 			}
 
 			for _, stem := range ambiguous {
@@ -184,7 +187,7 @@ type repairCandidateJSON struct {
 	VideoDigest string `json:"videoSha1Hex"`
 }
 
-func printRepairJSON(candidates []core.LivePhotoRepairCandidate, ambiguous []string, excluded []core.LivePhotoExclusion) error {
+func printRepairJSON(candidates []core.LivePhotoRepairCandidate, ambiguous []string, excluded []core.LivePhotoExclusion, alreadyRepaired []core.LivePhotoAlreadyRepaired) error {
 	type exclusionJSON struct {
 		Stem   string `json:"stem"`
 		Reason string `json:"reason"`
@@ -193,7 +196,11 @@ func printRepairJSON(candidates []core.LivePhotoRepairCandidate, ambiguous []str
 		Candidates []repairCandidateJSON `json:"candidates"`
 		Ambiguous  []string              `json:"ambiguous"`
 		Excluded   []exclusionJSON       `json:"excluded"`
-	}{Candidates: make([]repairCandidateJSON, 0, len(candidates)), Ambiguous: ambiguous, Excluded: make([]exclusionJSON, 0, len(excluded))}
+		Repaired   []exclusionJSON       `json:"alreadyRepaired"`
+	}{Candidates: make([]repairCandidateJSON, 0, len(candidates)), Ambiguous: ambiguous, Excluded: make([]exclusionJSON, 0, len(excluded)), Repaired: make([]exclusionJSON, 0, len(alreadyRepaired))}
+	for _, done := range alreadyRepaired {
+		out.Repaired = append(out.Repaired, exclusionJSON{Stem: done.Stem, Reason: done.Reason})
+	}
 	for _, exclusion := range excluded {
 		out.Excluded = append(out.Excluded, exclusionJSON{Stem: exclusion.Stem, Reason: exclusion.Reason})
 	}

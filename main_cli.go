@@ -10,9 +10,12 @@ import (
 
 // gotohp-cli is built without Wails, so it is CLI only.
 func main() {
+	build := getBuildInfo()
 	os.Exit(cli.Run(os.Args[1:], cli.Info{
 		ExecutableName: "gotohp-cli",
 		HasGUI:         false,
 		Version:        getAppVersion(),
+		Commit:         build.Commit,
+		BuildDate:      build.Date,
 	}))
 }

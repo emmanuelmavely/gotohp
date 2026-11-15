@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, onMounted, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, watch } from 'vue'
 import { ConfigManager } from '../bindings/app/core'
 import { DialogService } from '../bindings/app/internal/gui'
 import { Events } from '@wailsio/runtime'
@@ -10,6 +10,48 @@ import SettingRow from '@/components/SettingRow.vue'
 import { debugEnabled } from '@/utils/debug'
 import { thumbnailsEnabled } from '@/utils/thumbnails'
 import { closeBehavior, type CloseBehavior } from '@/utils/closeBehavior'
+import NotesSheet from '@/components/NotesSheet.vue'
+import {
+    appUpdate,
+    autoCheckUpdates,
+    checkForUpdates,
+    hasAppService,
+    loadAppInfo,
+    loadChangelog,
+    openExternal,
+    releasePageUrl,
+} from '@/utils/appUpdate'
+import { minuteClock } from '@/utils/accountStorage'
+import { formatTimeAgo } from '@/utils/format'
+
+const changelogOpen = ref(false)
+const changelog = ref('')
+const changelogLoading = ref(false)
+
+async function openChangelog() {
+    changelogOpen.value = true
+    if (changelog.value) return
+    changelogLoading.value = true
+    changelog.value = await loadChangelog()
+    changelogLoading.value = false
+}
+
+/** "2026-11-15T10:04:31Z" becomes a local date; empty for local builds. */
+const buildDate = computed(() => {
+    const date = appUpdate.info?.BuildDate ? new Date(appUpdate.info.BuildDate) : null
+    return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString() : ''
+})
+
+const updateStatus = computed(() => {
+    if (appUpdate.checking) return 'Checking GitHub…'
+    if (appUpdate.error) return `Last check failed: ${appUpdate.error}`
+    const update = appUpdate.update
+    const checked = appUpdate.lastCheckedAt ? ` · checked ${formatTimeAgo(appUpdate.lastCheckedAt, minuteClock.value)}` : ''
+    if (!update) return 'Not checked yet.'
+    if (update.Newer) return `Version ${update.Latest} is available${checked}`
+    if (!update.Latest) return `No releases published yet${checked}`
+    return `Up to date${checked}`
+})
 
 const closeOptions: { value: CloseBehavior, label: string }[] = [
   { value: 'ask', label: 'Ask' },
@@ -95,6 +137,7 @@ async function removeWatchFolder(folder: string) {
 }
 
 onMounted(async () => {
+    void loadAppInfo()
     try {
         const config = await ConfigManager.GetSettings()
         settings.value = {
@@ -537,5 +580,85 @@ watch(() => settings.value.startWithWindows, async (newValue) => {
         </SettingRow>
       </div>
     </section>
+
+    <section
+      v-if="hasAppService()"
+      class="flex flex-col gap-1.5"
+    >
+      <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
+        About
+      </h3>
+      <div class="divide-y overflow-hidden rounded-xl border bg-card">
+        <div class="flex items-center gap-3 px-3 py-2.5">
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5 select-text">
+            <span class="text-sm leading-tight font-medium">
+              gotohp {{ appUpdate.info?.Version || '…' }}
+            </span>
+            <span class="text-xs leading-snug text-muted-foreground">
+              <template v-if="appUpdate.info?.Commit">
+                Built {{ buildDate || appUpdate.info.BuildDate }} from
+                <code class="font-mono">{{ appUpdate.info.Commit }}</code>
+              </template>
+              <template v-else>
+                Local build
+              </template>
+            </span>
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            class="shrink-0 cursor-pointer"
+            @click="openChangelog"
+          >
+            What's new
+          </Button>
+        </div>
+        <div class="flex items-center gap-3 px-3 py-2.5">
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span class="text-sm leading-tight font-medium">Updates</span>
+            <span
+              class="text-xs leading-snug"
+              :class="appUpdate.update?.Newer && !appUpdate.checking ? 'text-primary' : 'text-muted-foreground'"
+            >{{ updateStatus }}</span>
+          </span>
+          <Button
+            v-if="appUpdate.update?.Newer && !appUpdate.checking"
+            size="sm"
+            class="shrink-0 cursor-pointer"
+            @click="openExternal(releasePageUrl())"
+          >
+            Download
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            class="shrink-0 cursor-pointer"
+            :disabled="appUpdate.checking"
+            @click="checkForUpdates(true)"
+          >
+            {{ appUpdate.checking ? 'Checking…' : 'Check now' }}
+          </Button>
+        </div>
+        <SettingRow
+          control-id="auto-update-check"
+          title="Check for updates automatically"
+          description="Once a day when gotohp starts, asks GitHub whether a newer release exists. Nothing is downloaded or installed without you."
+        >
+          <Switch
+            id="auto-update-check"
+            v-model="autoCheckUpdates"
+          />
+        </SettingRow>
+      </div>
+    </section>
+
+    <NotesSheet
+      v-model:open="changelogOpen"
+      title="What's new"
+      :description="`Changes in this fork of gotohp, up to version ${appUpdate.info?.Version ?? ''}.`"
+      :source="changelog"
+      :loading="changelogLoading"
+      empty-text="No changelog is bundled with this build."
+    />
   </div>
 </template>

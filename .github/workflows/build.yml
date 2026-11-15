@@ -3,34 +3,34 @@ name: Build Release
 on:
   workflow_dispatch:
     inputs:
-      os:
-        description: "OS to build (macos, windows, linux, all)"
-        required: true
-        default: "all"
-        type: choice
-        options:
-          - macos
-          - windows
-          - linux
-          - all
-      branch:
-        description: "Branch to build from"
-        required: true
-        default: "main"
-        type: string
+      build_windows:
+        description: "Build Windows"
+        required: false
+        default: true
+        type: boolean
+      build_macos:
+        description: "Build macOS"
+        required: false
+        default: true
+        type: boolean
+      build_linux:
+        description: "Build Linux"
+        required: false
+        default: true
+        type: boolean
       commit_sha:
-        description: "Specific commit SHA to build (optional, overrides branch)"
+        description: "Specific commit SHA to build (optional; otherwise the latest commit of the branch picked above)"
         required: false
         type: string
       build_debug:
-        description: "Also build debug version"
+        description: "Also build debug versions"
         required: false
-        default: true
+        default: false
         type: boolean
   push:
     tags:
       - "v*" # Created by Release Please when the release PR is merged
-
+      
 permissions:
   contents: write
 
@@ -46,12 +46,12 @@ jobs:
     name: Build macOS
     runs-on: macos-latest
     if: >
-      (github.event_name == 'workflow_dispatch' && (inputs.os == 'macos' || inputs.os == 'all')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.build_macos) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'push' && github.sha || (inputs.commit_sha || inputs.branch) }}
+          ref: ${{ inputs.commit_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -68,6 +68,28 @@ jobs:
 
       - name: Install Wails3
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Stamp version and build info
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # A tag build takes its version from the tag (v2.1 -> 2.1.0), so the
+          # app, its file properties and the update check all agree with it.
+          if [ "$REF_TYPE" = "tag" ]; then
+            VERSION="${REF_NAME#v}"
+            case "$VERSION" in
+              *.*.*) ;;
+              *.*) VERSION="$VERSION.0" ;;
+              *) VERSION="$VERSION.0.0" ;;
+            esac
+            sed -i.bak -E "s/^(  version: \")[^\"]*(\")/\1$VERSION\2/" build/config.yml
+            rm -f build/config.yml.bak
+            grep -n "  version:" build/config.yml
+          fi
+          printf '{"commit":"%s","date":"%s"}\n' "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/buildinfo.json
+          cat build/buildinfo.json
 
       - name: Build macOS App (Production)
         run: |
@@ -98,7 +120,7 @@ jobs:
           cd ..
 
       - name: Build macOS App (Debug)
-        if: (github.event_name == 'workflow_dispatch' && inputs.build_debug) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        if: github.event_name == 'workflow_dispatch' && inputs.build_debug
         run: |
           # Clean bin directory
           rm -rf bin/gotohp.app
@@ -120,7 +142,7 @@ jobs:
             release/gotohp-cli-macos-universal
 
       - name: Upload macOS Debug Artifact
-        if: (github.event_name == 'workflow_dispatch' && inputs.build_debug) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        if: github.event_name == 'workflow_dispatch' && inputs.build_debug
         uses: actions/upload-artifact@v7
         with:
           name: macos-debug
@@ -130,12 +152,12 @@ jobs:
     name: Build Windows
     runs-on: windows-latest
     if: >
-      (github.event_name == 'workflow_dispatch' && (inputs.os == 'windows' || inputs.os == 'all')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.build_windows) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'push' && github.sha || (inputs.commit_sha || inputs.branch) }}
+          ref: ${{ inputs.commit_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -160,6 +182,28 @@ jobs:
         shell: cmd
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
+      - name: Stamp version and build info
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # A tag build takes its version from the tag (v2.1 -> 2.1.0), so the
+          # app, its file properties and the update check all agree with it.
+          if [ "$REF_TYPE" = "tag" ]; then
+            VERSION="${REF_NAME#v}"
+            case "$VERSION" in
+              *.*.*) ;;
+              *.*) VERSION="$VERSION.0" ;;
+              *) VERSION="$VERSION.0.0" ;;
+            esac
+            sed -i.bak -E "s/^(  version: \")[^\"]*(\")/\1$VERSION\2/" build/config.yml
+            rm -f build/config.yml.bak
+            grep -n "  version:" build/config.yml
+          fi
+          printf '{"commit":"%s","date":"%s"}\n' "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/buildinfo.json
+          cat build/buildinfo.json
+
       - name: Build Windows App (Production)
         shell: pwsh
         run: |
@@ -180,7 +224,7 @@ jobs:
           go build -tags cli -trimpath -buildvcs=false -ldflags="-w -s" -o "release\gotohp-cli-x64.exe"
 
       - name: Build Windows App (Debug)
-        if: (github.event_name == 'workflow_dispatch' && inputs.build_debug) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        if: github.event_name == 'workflow_dispatch' && inputs.build_debug
         shell: pwsh
         run: |
           # Clean bin directory
@@ -206,7 +250,7 @@ jobs:
             release/gotohp-cli-x64.exe
 
       - name: Upload Windows Debug Artifact
-        if: (github.event_name == 'workflow_dispatch' && inputs.build_debug) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        if: github.event_name == 'workflow_dispatch' && inputs.build_debug
         uses: actions/upload-artifact@v7
         with:
           name: windows-debug
@@ -218,12 +262,12 @@ jobs:
     name: Build Linux
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'workflow_dispatch' && (inputs.os == 'linux' || inputs.os == 'all')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.build_linux) ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'push' && github.sha || (inputs.commit_sha || inputs.branch) }}
+          ref: ${{ inputs.commit_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -248,6 +292,28 @@ jobs:
 
       - name: Install Wails3
         run: go install -v github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: Stamp version and build info
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # A tag build takes its version from the tag (v2.1 -> 2.1.0), so the
+          # app, its file properties and the update check all agree with it.
+          if [ "$REF_TYPE" = "tag" ]; then
+            VERSION="${REF_NAME#v}"
+            case "$VERSION" in
+              *.*.*) ;;
+              *.*) VERSION="$VERSION.0" ;;
+              *) VERSION="$VERSION.0.0" ;;
+            esac
+            sed -i.bak -E "s/^(  version: \")[^\"]*(\")/\1$VERSION\2/" build/config.yml
+            rm -f build/config.yml.bak
+            grep -n "  version:" build/config.yml
+          fi
+          printf '{"commit":"%s","date":"%s"}\n' "$(git rev-parse --short HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > build/buildinfo.json
+          cat build/buildinfo.json
 
       - name: Build Linux App (Production)
         run: |
@@ -279,7 +345,7 @@ jobs:
           fi
 
       - name: Build Linux App (Debug)
-        if: (github.event_name == 'workflow_dispatch' && inputs.build_debug) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        if: github.event_name == 'workflow_dispatch' && inputs.build_debug
         run: |
           # Clean bin directory
           rm -f bin/gotohp
@@ -301,7 +367,7 @@ jobs:
             release/gotohp-cli_amd64.deb
 
       - name: Upload Linux Debug Artifact
-        if: (github.event_name == 'workflow_dispatch' && inputs.build_debug) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+        if: github.event_name == 'workflow_dispatch' && inputs.build_debug
         uses: actions/upload-artifact@v7
         with:
           name: linux-debug

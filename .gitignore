@@ -19,11 +19,13 @@ stats.json
 library-index.json
 sha1.cache.json
 upload-journal.json
+live-photo-repairs.json
 .gotohp-config-*
 .stats-*
 .library-index-*
 .sha1-cache-*
 .upload-journal-*
+.live-photo-repairs-*
 # Nix
 /result
 /result-*

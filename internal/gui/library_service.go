@@ -103,6 +103,24 @@ func (s *LibraryService) LivePhotoRepairs() (core.LivePhotoRepairReport, error) 
 	return core.FindLivePhotoRepairReport(index.Items), nil
 }
 
+// Bin lists the items in the library's bin, marking the videos the Live
+// Photo repair put there. It only reads; nothing is restored or deleted.
+func (s *LibraryService) Bin() (core.BinReport, error) {
+	api, err := apiFor()
+	if err != nil {
+		return core.BinReport{}, err
+	}
+	cached, _ := core.LoadLibraryIndex()
+	index, err := api.SyncLibraryIncremental(cached, s.reportSyncProgress)
+	if err != nil {
+		return core.BinReport{}, err
+	}
+	if err := index.Save(); err != nil {
+		return core.BinReport{}, err
+	}
+	return core.ListBin(index.Items, core.LoadLivePhotoRepairLedger()), nil
+}
+
 // RepairLivePhotos repairs the given stems one pair at a time and returns one
 // outcome per pair. Progress is reported through the livePhotoRepairProgress
 // event; the livePhotoRepairCancel event stops the batch. An empty list is
