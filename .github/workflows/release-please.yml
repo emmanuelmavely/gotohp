@@ -16,13 +16,20 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify release token
+        if: ${{ !secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          echo "::error::RELEASE_PLEASE_TOKEN must be configured as a repository secret."
+          echo "The default GITHUB_TOKEN is not allowed to create pull requests in this repository."
+          exit 1
+
       - uses: googleapis/release-please-action@v5
         id: release-please
         with:
-          # RELEASE_PLEASE_TOKEN must be a PAT (contents: write, pull-requests: write).
-          # Tags created with the default GITHUB_TOKEN do not trigger other
-          # workflows, so build.yml would never run on release without it.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          # A PAT is required because this repository does not allow the
+          # default GITHUB_TOKEN to create pull requests. Tags created with
+          # the PAT also trigger build.yml after a release PR is merged.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
