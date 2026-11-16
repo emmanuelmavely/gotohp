@@ -435,8 +435,9 @@ func (a *Api) UploadFileWithProgress(ctx context.Context, filePath string, uploa
 		}
 
 		// Wrap the file so every read (and retry) counts as disk activity,
-		// and progress is reported when a callback is provided.
-		reader := NewProgressReader(file, fileSize, nil)
+		// and progress is reported when a callback is provided. Reads are
+		// paced by the upload speed limit, shared by all upload threads.
+		reader := NewProgressReader(NewLimitedReader(ctx, file, UploadLimiter), fileSize, nil)
 		if onProgress != nil {
 			reader.onProgress = func(bytesRead, total int64) {
 				onProgress(bytesRead, total, attemptNum)

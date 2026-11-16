@@ -17,6 +17,19 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as core$0 from "../../core/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
+/**
+ * AccountPhoto returns the selected account's photo as a data: URL, or ""
+ * when it has none or it cannot be fetched (the window then shows the
+ * account's initial).
+ */
+export function AccountPhoto(email: string): $CancellablePromise<string> {
+    return $Call.ByID(2097823163, email);
+}
+
 /**
  * AccountStorage refreshes the library index and summarizes how much storage
  * the account uses.
@@ -28,12 +41,72 @@ export function AccountStorage(): $CancellablePromise<core$0.AccountStorage> {
 }
 
 /**
+ * AddToAlbum adds already uploaded items to an album: an album key adds to
+ * that album, anything else creates a new album with that name. It is used
+ * when an upload's album could not be reached and the user picks another.
+ * It returns the album keys used.
+ */
+export function AddToAlbum(mediaKeys: string[], albumNameOrKey: string): $CancellablePromise<string[]> {
+    return $Call.ByID(2626525815, mediaKeys, albumNameOrKey).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
  * Bin lists the items in the library's bin, marking the videos the Live
  * Photo repair put there. It only reads; nothing is restored or deleted.
  */
 export function Bin(): $CancellablePromise<core$0.BinReport> {
     return $Call.ByID(3068495119).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType2($result);
+    });
+}
+
+/**
+ * BinDelete deletes the chosen bin items (by media key) for good; with
+ * everything set it empties the whole bin. confirmed must be true: the caller
+ * confirms the user accepted that this cannot be undone. Items whose content
+ * is also in the library, and items from shared albums, are left alone.
+ */
+export function BinDelete(mediaKeys: string[], everything: boolean, confirmed: boolean): $CancellablePromise<$models.BinActionResult> {
+    return $Call.ByID(1473379692, mediaKeys, everything, confirmed).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
+ * BinRestore puts the chosen bin items (by media key) back in the library.
+ */
+export function BinRestore(mediaKeys: string[]): $CancellablePromise<$models.BinActionResult> {
+    return $Call.ByID(3077734647, mediaKeys).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
+ * CachedAlbums returns the albums from the last library scan without going
+ * online, so the album picker opens at once.
+ */
+export function CachedAlbums(): $CancellablePromise<core$0.AlbumList> {
+    return $Call.ByID(3542303928).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
+/**
+ * ClearUploadHistory forgets the recorded upload runs.
+ */
+export function ClearUploadHistory(): $CancellablePromise<void> {
+    return $Call.ByID(1472745606);
+}
+
+/**
+ * DuplicateAlbums lists albums that share a title, from the last library
+ * read. It never goes online.
+ */
+export function DuplicateAlbums(): $CancellablePromise<core$0.DuplicateAlbumGroup[]> {
+    return $Call.ByID(2288741003).then(($result: any) => {
+        return $$createType6($result);
     });
 }
 
@@ -42,7 +115,126 @@ export function Bin(): $CancellablePromise<core$0.BinReport> {
  */
 export function LivePhotoRepairs(): $CancellablePromise<core$0.LivePhotoRepairReport> {
     return $Call.ByID(3507459294).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType7($result);
+    });
+}
+
+/**
+ * PrepareTakeaway groups the selected account's own photos and videos into
+ * shared albums named "gotohp takeaway 1, 2, …", albumSize items each. It
+ * only groups; nothing is uploaded, moved or deleted. confirmed must be
+ * true. Progress is reported through the takeawayProgress event; the
+ * takeawayCancel event stops it, keeping the albums already made.
+ */
+export function PrepareTakeaway(albumSize: number, confirmed: boolean): $CancellablePromise<core$0.TakeawayResult> {
+    return $Call.ByID(1106931056, albumSize, confirmed).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
+ * QuotaConversionScan finds the files that count against the storage quota
+ * and have a byte-identical copy in the given folders. Nothing is changed.
+ */
+export function QuotaConversionScan(folders: string[]): $CancellablePromise<core$0.QuotaConversionReport> {
+    return $Call.ByID(3418003439, folders).then(($result: any) => {
+        return $$createType9($result);
+    });
+}
+
+/**
+ * QuotaConversionStatus reports every recorded conversion with its state, read
+ * from the library.
+ */
+export function QuotaConversionStatus(): $CancellablePromise<core$0.QuotaConversionStatus[]> {
+    return $Call.ByID(75016132).then(($result: any) => {
+        return $$createType11($result);
+    });
+}
+
+/**
+ * QuotaConvert converts the chosen files from the last scan: each counted
+ * copy is deleted for good (after its local copy is checked again) and the
+ * local copy is uploaded without quota, in batches. acknowledged must be
+ * true: the caller confirms the user accepted what is lost.
+ */
+export function QuotaConvert(mediaKeys: string[], acknowledged: boolean): $CancellablePromise<core$0.QuotaDeleteOutcome[]> {
+    return $Call.ByID(748332089, mediaKeys, acknowledged).then(($result: any) => {
+        return $$createType13($result);
+    });
+}
+
+/**
+ * QuotaConvertAll converts every counted file except Live Photos, 20 at a
+ * time: download the stored file into folder (checked against the original's
+ * fingerprint when Google keeps the original), delete the counted copy for
+ * good, and upload the download again without quota. Earlier conversions
+ * that were deleted but not uploaded yet go first. acknowledged must be true:
+ * the caller confirms the user accepted what is lost. limit, when above 0,
+ * converts only that many files (a trial run). Running it again continues
+ * where it stopped.
+ */
+export function QuotaConvertAll(folder: string, limit: number, acknowledged: boolean): $CancellablePromise<core$0.QuotaConvertAllResult> {
+    return $Call.ByID(19267808, folder, limit, acknowledged).then(($result: any) => {
+        return $$createType14($result);
+    });
+}
+
+/**
+ * QuotaConvertAllPlan reads the library and says what "convert all" would
+ * do. Nothing is changed.
+ */
+export function QuotaConvertAllPlan(): $CancellablePromise<core$0.QuotaConvertAllPlan> {
+    return $Call.ByID(3449192051).then(($result: any) => {
+        return $$createType15($result);
+    });
+}
+
+/**
+ * QuotaDownload downloads the exact originals of counted files that have no
+ * copy on this computer into folder (one subfolder per year), checking each
+ * against the library. mediaKeys chooses files from the last scan; empty
+ * means all downloadable files. Nothing in Google Photos is changed. The
+ * returned report lists the downloaded files as convertible.
+ */
+export function QuotaDownload(mediaKeys: string[], folder: string): $CancellablePromise<core$0.QuotaDownloadResult> {
+    return $Call.ByID(1465101834, mediaKeys, folder).then(($result: any) => {
+        return $$createType16($result);
+    });
+}
+
+/**
+ * QuotaForgetConverted removes finished conversions from the record.
+ */
+export function QuotaForgetConverted(): $CancellablePromise<void> {
+    return $Call.ByID(3784616823);
+}
+
+/**
+ * QuotaRecordedCount returns how many conversions are recorded, without
+ * touching the network.
+ */
+export function QuotaRecordedCount(): $CancellablePromise<number> {
+    return $Call.ByID(292710797);
+}
+
+/**
+ * QuotaUploadReady uploads, without quota, every recorded file whose counted
+ * copy is gone but which is not back in the library yet. It returns how many
+ * files were started.
+ */
+export function QuotaUploadReady(): $CancellablePromise<number> {
+    return $Call.ByID(3197581374);
+}
+
+/**
+ * RefreshAlbums reads the library's changes and returns the albums. The
+ * app calls it in the background at start, so the album picker is ready;
+ * the first time it reads the whole library.
+ */
+export function RefreshAlbums(): $CancellablePromise<core$0.AlbumList> {
+    return $Call.ByID(2089182041).then(($result: any) => {
+        return $$createType4($result);
     });
 }
 
@@ -54,7 +246,27 @@ export function LivePhotoRepairs(): $CancellablePromise<core$0.LivePhotoRepairRe
  */
 export function RepairLivePhotos(stems: string[]): $CancellablePromise<core$0.LivePhotoRepairOutcome[]> {
     return $Call.ByID(1807870720, stems).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType18($result);
+    });
+}
+
+/**
+ * TakeawayPlan reads the selected account's library and reports what an
+ * album takeaway would gather at the given album size. Switch accounts in
+ * the sidebar to choose the source account.
+ */
+export function TakeawayPlan(albumSize: number): $CancellablePromise<core$0.TakeawayPlan> {
+    return $Call.ByID(2769075488, albumSize).then(($result: any) => {
+        return $$createType19($result);
+    });
+}
+
+/**
+ * UploadHistory returns the recent upload runs, newest first.
+ */
+export function UploadHistory(): $CancellablePromise<core$0.UploadRun[]> {
+    return $Call.ByID(228452505).then(($result: any) => {
+        return $$createType21($result);
     });
 }
 
@@ -63,14 +275,31 @@ export function RepairLivePhotos(stems: string[]): $CancellablePromise<core$0.Li
  */
 export function UploadStats(): $CancellablePromise<core$0.UploadStats> {
     return $Call.ByID(1517743466).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType22($result);
     });
 }
 
 // Private type creation functions
 const $$createType0 = core$0.AccountStorage.createFrom;
-const $$createType1 = core$0.BinReport.createFrom;
-const $$createType2 = core$0.LivePhotoRepairReport.createFrom;
-const $$createType3 = core$0.LivePhotoRepairOutcome.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = core$0.UploadStats.createFrom;
+const $$createType1 = $Create.Array($Create.Any);
+const $$createType2 = core$0.BinReport.createFrom;
+const $$createType3 = $models.BinActionResult.createFrom;
+const $$createType4 = core$0.AlbumList.createFrom;
+const $$createType5 = core$0.DuplicateAlbumGroup.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = core$0.LivePhotoRepairReport.createFrom;
+const $$createType8 = core$0.TakeawayResult.createFrom;
+const $$createType9 = core$0.QuotaConversionReport.createFrom;
+const $$createType10 = core$0.QuotaConversionStatus.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = core$0.QuotaDeleteOutcome.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = core$0.QuotaConvertAllResult.createFrom;
+const $$createType15 = core$0.QuotaConvertAllPlan.createFrom;
+const $$createType16 = core$0.QuotaDownloadResult.createFrom;
+const $$createType17 = core$0.LivePhotoRepairOutcome.createFrom;
+const $$createType18 = $Create.Array($$createType17);
+const $$createType19 = core$0.TakeawayPlan.createFrom;
+const $$createType20 = core$0.UploadRun.createFrom;
+const $$createType21 = $Create.Array($$createType20);
+const $$createType22 = core$0.UploadStats.createFrom;

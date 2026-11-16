@@ -24,3 +24,15 @@ export async function openInGooglePhotos(mediaKey: string) {
     })
   }
 }
+
+/** Opens an album in Google Photos in the system browser. */
+export async function openAlbumInGooglePhotos(albumKey: string) {
+  if (!albumKey) return
+  try {
+    await Browser.OpenURL(`https://photos.google.com/album/${encodeURIComponent(albumKey)}`)
+  } catch (error) {
+    toast.error('Could not open the browser', {
+      description: error instanceof Error ? error.message : String(error),
+    })
+  }
+}

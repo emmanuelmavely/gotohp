@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -113,6 +114,27 @@ func runGUI() {
 	uploadManager := core.NewUploadManager(reporter, wailsApp.Logger)
 	// The GUI pauses uploads on network loss and resumes them automatically.
 	uploadManager.SetAutoResume(true)
+	// Speed limits from Settings apply to every upload and download.
+	configManager.ApplySavedSpeedLimits()
+
+	// Quota conversion re-uploads through the same upload manager and
+	// reports its local scan and progress live.
+	gui.SetQuotaConversion(libraryService, uploadManager,
+		func(progress core.QuotaScanProgress) { wailsApp.Event.Emit("quotaScanProgress", progress) },
+		func(progress core.QuotaConvertProgress) { wailsApp.Event.Emit("quotaConvertProgress", progress) },
+		func(progress core.QuotaDownloadProgress) { wailsApp.Event.Emit("quotaDownloadProgress", progress) },
+	)
+	wailsApp.Event.On("quotaConvertCancel", func(*application.CustomEvent) {
+		gui.CancelQuotaConversion(libraryService)
+	})
+
+	// Album takeaway groups the selected account's photos into shared albums.
+	gui.SetTakeawayProgress(libraryService, func(progress core.TakeawayProgress) {
+		wailsApp.Event.Emit("takeawayProgress", progress)
+	})
+	wailsApp.Event.On("takeawayCancel", func(*application.CustomEvent) {
+		gui.CancelTakeaway(libraryService)
+	})
 
 	// Offer to resume an interrupted upload run from the previous session.
 	if summary := core.PendingUploadJournal(); summary.Exists {
@@ -172,6 +194,15 @@ func runGUI() {
 	// Listen for upload cancel event
 	wailsApp.Event.On("uploadCancel", func(e *application.CustomEvent) {
 		uploadManager.Cancel()
+	})
+	// Pause keeps the run's journal; resume continues with what is left.
+	wailsApp.Event.On("uploadPause", func(e *application.CustomEvent) {
+		uploadManager.Pause()
+	})
+	wailsApp.Event.On("uploadResumePaused", func(e *application.CustomEvent) {
+		if !uploadManager.ResumePaused() {
+			wailsApp.Logger.Warn("uploadResumePaused: nothing is paused")
+		}
 	})
 
 	// Resume / discard a pending upload journal from the previous session
@@ -246,14 +277,32 @@ func isHiddenStart(args []string) bool {
 // It runs on a watcher goroutine and blocks until the batch is started.
 func watchUpload(uploadManager *core.UploadManager, configManager *core.ConfigManager, wailsApp *application.App) func(paths []string) {
 	return func(paths []string) {
-		// Let a running upload finish so the watched batch starts cleanly.
-		for uploadManager.IsRunning() {
+		// Let a running upload finish so the watched batch starts cleanly. A
+		// paused run waits too: starting a new one would drop its journal.
+		for uploadManager.IsRunning() || uploadManager.IsPaused() {
 			time.Sleep(2 * time.Second)
 		}
 		wailsApp.Event.Emit("watchFilesFound", core.WatchFilesFoundEvent{
 			Count: len(paths),
 		})
-		uploadManager.Upload(paths, configManager.SessionUploadOptions())
+		// A watched upload never takes the album picked for a dropped batch:
+		// each watch folder uses its own album setting, or none.
+		settings := configManager.GetConfig().Preferences
+		groups := core.WatchUploadGroups(paths, settings.WatchFolders, configManager.WatchFolderAlbums())
+		albums := make([]string, 0, len(groups))
+		for album := range groups {
+			albums = append(albums, album)
+		}
+		sort.Strings(albums)
+		for _, album := range albums {
+			for uploadManager.IsRunning() || uploadManager.IsPaused() {
+				time.Sleep(2 * time.Second)
+			}
+			opts := configManager.SessionUploadOptions()
+			opts.AlbumName = album
+			opts.AlbumAutoMode = false
+			uploadManager.Upload(groups[album], opts)
+		}
 	}
 }
 

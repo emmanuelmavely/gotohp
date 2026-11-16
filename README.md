@@ -5,25 +5,32 @@
 Unofficial Google Photos Desktop GUI Client
 
 - Unlimited uploads (can be disabled)
+- Sidebar layout with Upload, Storage, Bin, Live Photos, Activity and Settings pages
 - Drag-and-drop file upload interface, with drops queued while an upload runs
+- Upload into an existing album picked from a searchable list of your albums (recently used first), or create a new one. If the album cannot be reached, the files stay uploaded and you can pick another album
+- Pause and resume uploads, and optional upload/download speed limits (Settings → Network, or `upload --limit-rate 2M`)
 - Credential management
 - Real-time upload progress: speed and disk-read graphs, time remaining, per-thread status, thumbnails in wide windows
 - Configurable upload threads
 - Individual files or directories uploads, with optional recursive scanning
 - Skips files already present in your account; re-dropped files are not hashed again
 - Resumes an interrupted upload (app closed, crash, shutdown) and pauses on network loss until the connection returns
-- Watch folders: new photos and videos upload automatically, optionally starting with Windows
+- Watch folders: new photos and videos upload automatically, each folder optionally into its own album, optionally starting with Windows
 - Runs in the system tray: closing the window asks whether to keep running there or quit
-- Statistics: the storage your account really uses, all-time upload totals and a daily history
-- Live Photo repair: rejoins photos and videos that were uploaded as separate items. A pair is only offered when the photo is an HEIC original and was taken at the same moment as the video; JPEG-only names (often edits or shared copies) are skipped. Repairs run one pair at a time with live progress; it can be cancelled, and stops if the connection drops (scan again to continue). Repaired pairs are remembered and not offered again
-- Bin view: what is in your Google Photos bin, days left before it is deleted, and which videos the Live Photo repair put there (read-only)
+- Activity: all-time upload totals, a daily chart, the last 30 uploads, and failed files with their reasons and a Retry button
+- Live Photo repair: rejoins photos and videos that were uploaded as separate items. A pair is only offered when the photo is an HEIC original and was taken at the same moment as the video; JPEG-only names (often edits or shared copies) are skipped. Repairs run one pair at a time with live progress; it can be cancelled, and stops if the connection drops (scan again to continue). Photos that already have their motion, and pairs already repaired, are not offered again
+- Storage: see what counts against your storage and convert it to unlimited with one button, with Pause/Resume and a live graph. Each file is downloaded to a backup folder, its counted copy deleted for good and the download uploaded again without counting (albums, favourites, edits and sharing on it are lost)
+- Bin: what is in your Google Photos bin and how many days are left, with Restore, Delete and Empty bin
+- Finds album names used by more than one album (Settings → Albums)
+- Album takeaway: groups an account's photos into shared albums (Settings → Albums) so they can be shared and saved into another account by hand — useful for consolidating accounts
+- Shows the account's Google photo in the sidebar
 - About section with the version and a bundled changelog, and a daily check for new releases on GitHub (Settings → About; can be turned off)
 - Open uploaded and repaired items in Google Photos with one click (opens in the Google account your browser is signed in to)
 - Debug mode with a live event log (Settings → Advanced, or Ctrl/Cmd + Shift + D)
 - CLI mode
 - Configurable, persistent upload settings (stored in "%system config path%/gotohp/gotohp.config")  
    You can force local config by creating empty gotohp.config next to executable.  
-   App data (hash cache, library index, upload journal, statistics, Live Photo repair record) is kept in the same folder.
+   App data (hash cache, library index, upload journal, upload history, statistics, Live Photo repair record, account photos) is kept in the same folder.
 
 ## [Download](https://github.com/emmanuelmavely/gotohp/releases/latest)
 
@@ -48,6 +55,7 @@ More commands:
 ```shell
 gotohp-cli upload /path/to/photos --dry-run          # report what is already uploaded, upload nothing
 gotohp-cli upload --resume                           # continue an interrupted run from its journal
+gotohp-cli upload /path/to/photos --limit-rate 2M    # cap the total upload speed at 2 MB/s
 gotohp-cli quota list                                # files that use storage quota, each file counted once
 gotohp-cli quota list --breakdown                    # totals by owner, duplicate, trash and quality
 gotohp-cli repair live-photos                        # list Live Photos uploaded as separate items

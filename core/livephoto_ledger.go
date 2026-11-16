@@ -193,7 +193,9 @@ const binRetention = 60 * 24 * time.Hour
 
 // BinItem is one library item in the bin.
 type BinItem struct {
-	MediaKey  string
+	MediaKey string
+	// DedupKey restores or deletes the item.
+	DedupKey  string
 	FileName  string
 	IsVideo   bool
 	SizeBytes int64
@@ -261,6 +263,7 @@ func ListBin(items []*RemoteMediaItem, ledger LivePhotoRepairLedger) BinReport {
 		}
 		bin := BinItem{
 			MediaKey:      item.MediaKey,
+			DedupKey:      item.DedupKey,
 			FileName:      item.FileName,
 			IsVideo:       item.Type == MediaTypeVideo,
 			SizeBytes:     item.SizeBytes,
@@ -291,4 +294,27 @@ func ListBin(items []*RemoteMediaItem, ledger LivePhotoRepairLedger) BinReport {
 		return report.Items[i].TrashedAt > report.Items[j].TrashedAt
 	})
 	return report
+}
+
+// BinSelection splits the chosen bin items (by media key; all of them when
+// keys is empty) into the dedup keys that may be deleted for good and the
+// items left alone. Items from shared albums are not this account's to
+// delete, and an item whose content is also in the library is skipped: both
+// share one dedup key, so deleting it could take the library copy too.
+func BinSelection(report BinReport, keys []string) (dedupKeys []string, skipped []BinItem) {
+	wanted := map[string]bool{}
+	for _, key := range keys {
+		wanted[key] = true
+	}
+	for _, item := range report.Items {
+		if len(wanted) > 0 && !wanted[item.MediaKey] {
+			continue
+		}
+		if item.DedupKey == "" || item.Shared || item.CopyInLibrary {
+			skipped = append(skipped, item)
+			continue
+		}
+		dedupKeys = append(dedupKeys, item.DedupKey)
+	}
+	return dedupKeys, skipped
 }

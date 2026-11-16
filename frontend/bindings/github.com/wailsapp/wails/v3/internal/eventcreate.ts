@@ -20,11 +20,15 @@ function configure() {
         "files-dropped": $$createType4,
         "librarySyncProgress": $$createType5,
         "livePhotoRepairProgress": $$createType6,
-        "resumePending": $$createType7,
-        "startUpload": $$createType8,
-        "uploadStart": $$createType9,
-        "uploadWarning": $$createType10,
-        "watchFilesFound": $$createType11,
+        "quotaConvertProgress": $$createType7,
+        "quotaDownloadProgress": $$createType8,
+        "quotaScanProgress": $$createType9,
+        "resumePending": $$createType10,
+        "startUpload": $$createType11,
+        "takeawayProgress": $$createType12,
+        "uploadStart": $$createType13,
+        "uploadWarning": $$createType14,
+        "watchFilesFound": $$createType15,
     }));
 }
 
@@ -36,10 +40,14 @@ const $$createType3 = core$0.AlbumError.createFrom;
 const $$createType4 = core$0.FilesDroppedEvent.createFrom;
 const $$createType5 = core$0.LibrarySyncStats.createFrom;
 const $$createType6 = core$0.LivePhotoRepairProgress.createFrom;
-const $$createType7 = core$0.UploadJournalSummary.createFrom;
-const $$createType8 = core$0.StartUploadEvent.createFrom;
-const $$createType9 = core$0.UploadBatchStart.createFrom;
-const $$createType10 = core$0.PreflightWarning.createFrom;
-const $$createType11 = core$0.WatchFilesFoundEvent.createFrom;
+const $$createType7 = core$0.QuotaConvertProgress.createFrom;
+const $$createType8 = core$0.QuotaDownloadProgress.createFrom;
+const $$createType9 = core$0.QuotaScanProgress.createFrom;
+const $$createType10 = core$0.UploadJournalSummary.createFrom;
+const $$createType11 = core$0.StartUploadEvent.createFrom;
+const $$createType12 = core$0.TakeawayProgress.createFrom;
+const $$createType13 = core$0.UploadBatchStart.createFrom;
+const $$createType14 = core$0.PreflightWarning.createFrom;
+const $$createType15 = core$0.WatchFilesFoundEvent.createFrom;
 
 configure();

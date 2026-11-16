@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 )
 
 // LibraryIndexVersion is the current on-disk format of the library index.
-// Version 2 added HasMotion; an older index is replaced by a full scan,
-// because a delta sync would never fill the field for unchanged items.
-const LibraryIndexVersion = 2
+// Version 2 added HasMotion, version 3 the favourite, archived and edited
+// flags, and version 4 the albums. An index older than 3 is replaced by a
+// full scan, because a delta sync would never fill new fields for unchanged
+// items; a version 3 index is kept and gets its albums from one full walk.
+const LibraryIndexVersion = 4
 
 // LibraryIndex persists the remote library's media items together with the
 // sync token of the last sync cycle. With the token the server only reports
@@ -24,6 +28,10 @@ type LibraryIndex struct {
 	SyncedAt  int64              `json:"syncedAt"`
 	SyncToken string             `json:"syncToken,omitempty"`
 	Items     []*RemoteMediaItem `json:"items"`
+	Albums    []*RemoteAlbum     `json:"albums,omitempty"`
+	// AlbumsKnown is true once a full walk with albums was saved; an index
+	// from version 3 keeps its items but has no albums yet.
+	AlbumsKnown bool `json:"albumsKnown,omitempty"`
 }
 
 // LibraryIndexPath returns the index file location next to the config file,
@@ -53,6 +61,12 @@ func LoadLibraryIndex() (*LibraryIndex, error) {
 	var index LibraryIndex
 	if err := json.Unmarshal(data, &index); err != nil {
 		return nil, nil
+	}
+	// Version 3 lacks only the albums: its items stay usable, and the next
+	// sync walks the whole library once to fill the albums in.
+	if index.Version == 3 {
+		index.Version = LibraryIndexVersion
+		index.AlbumsKnown = false
 	}
 	if index.Version != LibraryIndexVersion {
 		return nil, fmt.Errorf("unsupported library index version %d", index.Version)
@@ -118,7 +132,7 @@ func (idx *LibraryIndex) UploadedHashes() map[string]struct{} {
 // everything. onPage receives running totals after every fetched page and
 // may be nil. The returned index is complete and ready to save.
 func (a *Api) SyncLibraryIncremental(cached *LibraryIndex, onPage func(LibrarySyncStats)) (*LibraryIndex, error) {
-	if cached == nil || cached.SyncToken == "" {
+	if cached == nil || cached.SyncToken == "" || !cached.AlbumsKnown {
 		return a.fullLibraryIndex(onPage)
 	}
 	index, err := a.deltaLibraryIndex(cached, onPage)
@@ -132,15 +146,17 @@ func (a *Api) SyncLibraryIncremental(cached *LibraryIndex, onPage func(LibrarySy
 
 // fullLibraryIndex walks the whole library and builds a fresh index.
 func (a *Api) fullLibraryIndex(onPage func(LibrarySyncStats)) (*LibraryIndex, error) {
-	items, _, syncToken, _, err := a.SyncLibraryWithProgress(onPage)
+	library, syncToken, _, err := a.syncLibraryAccumulated(onPage)
 	if err != nil {
 		return nil, err
 	}
 	return &LibraryIndex{
-		Version:   LibraryIndexVersion,
-		SyncedAt:  time.Now().Unix(),
-		SyncToken: syncToken,
-		Items:     items,
+		Version:     LibraryIndexVersion,
+		SyncedAt:    time.Now().Unix(),
+		SyncToken:   syncToken,
+		Albums:      library.albumList(),
+		AlbumsKnown: true,
+		Items:       library.items(),
 	}, nil
 }
 
@@ -156,6 +172,9 @@ func (a *Api) deltaLibraryIndex(cached *LibraryIndex, onPage func(LibrarySyncSta
 		}
 		library.byKey[item.MediaKey] = item
 		library.count(item, 1)
+	}
+	for _, album := range cached.Albums {
+		library.addAlbum(album)
 	}
 	report := func() {
 		stats := LibrarySyncStats{Items: len(library.byKey), TotalBytes: library.totalBytes,
@@ -194,9 +213,78 @@ func (a *Api) deltaLibraryIndex(cached *LibraryIndex, onPage func(LibrarySyncSta
 	}
 
 	return &LibraryIndex{
-		Version:   LibraryIndexVersion,
-		SyncedAt:  time.Now().Unix(),
-		SyncToken: syncToken,
-		Items:     library.items(),
+		Version:     LibraryIndexVersion,
+		SyncedAt:    time.Now().Unix(),
+		SyncToken:   syncToken,
+		Albums:      library.albumList(),
+		AlbumsKnown: true,
+		Items:       library.items(),
 	}, nil
+}
+
+// AlbumList is what the album picker shows.
+type AlbumList struct {
+	Albums []RemoteAlbum
+	// SyncedAt is when the library was last read (Unix seconds); Known is
+	// false when no library scan with albums exists yet.
+	SyncedAt int64
+	Known    bool
+}
+
+// AlbumsOf lists the index's titled albums, most recently changed first.
+func AlbumsOf(index *LibraryIndex) AlbumList {
+	list := AlbumList{Albums: []RemoteAlbum{}}
+	if index == nil {
+		return list
+	}
+	list.Known, list.SyncedAt = index.AlbumsKnown, index.SyncedAt
+	for _, album := range index.Albums {
+		if album != nil && strings.TrimSpace(album.Title) != "" {
+			list.Albums = append(list.Albums, *album)
+		}
+	}
+	sort.SliceStable(list.Albums, func(i, j int) bool { return list.Albums[i].LastActivity > list.Albums[j].LastActivity })
+	return list
+}
+
+// DuplicateAlbumGroup is a set of albums that share a title.
+type DuplicateAlbumGroup struct {
+	Title  string
+	Albums []RemoteAlbum
+	// Items is the total item count across the group.
+	Items int64
+}
+
+// DuplicateAlbums groups albums whose titles match (ignoring case and
+// surrounding spaces), largest groups first. Within a group the biggest
+// album comes first.
+func DuplicateAlbums(albums []RemoteAlbum) []DuplicateAlbumGroup {
+	byTitle := map[string]*DuplicateAlbumGroup{}
+	var order []string
+	for _, album := range albums {
+		title := strings.TrimSpace(album.Title)
+		if title == "" {
+			continue
+		}
+		key := strings.ToLower(title)
+		group, ok := byTitle[key]
+		if !ok {
+			group = &DuplicateAlbumGroup{Title: title}
+			byTitle[key] = group
+			order = append(order, key)
+		}
+		group.Albums = append(group.Albums, album)
+		group.Items += album.ItemCount
+	}
+	groups := []DuplicateAlbumGroup{}
+	for _, key := range order {
+		group := byTitle[key]
+		if len(group.Albums) < 2 {
+			continue
+		}
+		sort.SliceStable(group.Albums, func(i, j int) bool { return group.Albums[i].ItemCount > group.Albums[j].ItemCount })
+		groups = append(groups, *group)
+	}
+	sort.SliceStable(groups, func(i, j int) bool { return len(groups[i].Albums) > len(groups[j].Albums) })
+	return groups
 }

@@ -56,6 +56,10 @@ export interface AlbumStatus {
 export interface AlbumError {
   AlbumName: string;
   Error: string;
+  /** The album key no longer exists. Missing on older backends. */
+  NotFound?: boolean;
+  /** The uploaded items that did not reach the album. */
+  MediaKeys?: string[] | null;
 }
 
 function isSkippedUploadWarning(code: string): boolean {
@@ -112,8 +116,12 @@ export interface UploadState {
   startTime: number;
   // Set when the batch stops; 0 while a batch is running
   endTime: number;
-  // Non-empty while a network pause stopped the run; auto-resumes later
+  // Non-empty while the run is paused: by a network loss (resumes on its
+  // own) or by the user (pausedByUser, resumes with Resume)
   paused: string;
+  pausedByUser: boolean;
+  // Set between pressing Resume and the resumed run starting
+  resuming: boolean;
   // Speed calculation (bytes per second)
   uploadSpeed: number;
   peakSpeed: number;
@@ -156,6 +164,8 @@ class UploadManager {
     startTime: 0,
     endTime: 0,
     paused: '',
+    pausedByUser: false,
+    resuming: false,
     uploadSpeed: 0,
     peakSpeed: 0,
     diskSpeed: 0,
@@ -231,6 +241,8 @@ class UploadManager {
       this.state.albumStatus = null;
       this.state.isCreatingAlbum = false;
       this.state.paused = '';
+      this.state.pausedByUser = false;
+      this.state.resuming = false;
       this.lastSpeedUpdate = Date.now();
       this.lastBytesUploaded = 0;
       this.speedSamples = [];
@@ -288,9 +300,17 @@ class UploadManager {
     });
 
     // Handle file status updates
-    Events.On("FileStatus", (event: { data: FileUploadResult }) => {
+    Events.On("FileStatus", (event: { data: FileUploadResult & { Interrupted?: boolean } }) => {
       const { Path, Paths } = event.data;
       debugLog(event.data.IsError ? "error" : "event", "backend", "FileStatus", event.data);
+      // Stopped by Pause or Cancel: not a failure, and Resume uploads it again.
+      if (event.data.Interrupted) {
+        for (const stoppedPath of Paths?.length ? Paths : [Path]) {
+          this.fileBytes.delete(stoppedPath);
+        }
+        this.updateBytesAndSpeed();
+        return;
+      }
       if (Path) {
         this.state.recent.unshift({
           path: Path,
@@ -416,9 +436,12 @@ class UploadManager {
     }
   }
 
-  /** True from the moment a drop is accepted until the last queued job has finished. */
+  /**
+   * True from the moment a drop is accepted until the last queued job has
+   * finished. A paused upload counts too: a new run would replace its journal.
+   */
   public isBusy(): boolean {
-    return this.state.isUploading || this.state.isStarting || this.awaitingStart;
+    return this.state.isUploading || this.state.isStarting || this.awaitingStart || Boolean(this.state.paused);
   }
 
   /**
@@ -593,10 +616,42 @@ class UploadManager {
     this.state.recent = [];
   }
 
+  /**
+   * Pauses the running upload. What is not uploaded yet stays in the upload
+   * journal; files in flight start again from the beginning on resume.
+   * Queued drops wait until the paused upload is resumed and finishes.
+   */
+  public pauseUpload() {
+    if (!this.state.isUploading || this.state.paused) return;
+    debugLog("info", "frontend", "uploadPause");
+    this.state.pausedByUser = true;
+    this.state.paused = "Paused";
+    Events.Emit("uploadPause");
+  }
+
+  /** Continues a paused upload (paused by the user or by a network loss). */
+  public resumeUpload() {
+    if (!this.state.paused) return;
+    debugLog("info", "frontend", "uploadResumePaused");
+    this.state.resuming = true;
+    Events.Emit("uploadResumePaused");
+    // If nothing was left to resume, no new run starts; clear the banner.
+    setTimeout(() => {
+      if (this.state.resuming && !this.state.isUploading) {
+        this.state.resuming = false;
+        this.state.paused = '';
+        this.state.pausedByUser = false;
+        this.scheduleNextJob();
+      }
+    }, 15000);
+  }
+
   /** Cancels the running upload and drops everything queued behind it. */
   public cancelUpload() {
     debugLog("info", "frontend", "uploadCancel");
     this.state.paused = '';
+    this.state.pausedByUser = false;
+    this.state.resuming = false;
     this.stopHistoryTimer();
     this.clearQueue();
     if (this.advanceTimer !== null) {

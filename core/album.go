@@ -11,6 +11,21 @@ import (
 type AlbumError struct {
 	AlbumName string `json:"AlbumName"`
 	Error     string `json:"Error"`
+	// NotFound is set when the album key no longer exists (deleted, or not
+	// visible to this account).
+	NotFound bool `json:"NotFound"`
+	// MediaKeys are the uploaded items that did not reach the album, so they
+	// can be added to another album later.
+	MediaKeys []string `json:"MediaKeys"`
+}
+
+// IsAlbumNotFound reports whether an album error means the album is gone.
+func IsAlbumNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "404") || strings.Contains(text, "not_found") || strings.Contains(text, "not found")
 }
 
 const (

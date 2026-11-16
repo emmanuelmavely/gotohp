@@ -52,3 +52,71 @@ export class AppInfo {
         return new AppInfo($$parsedSource as Partial<AppInfo>);
     }
 }
+
+/**
+ * BinActionResult says what a bin action did.
+ */
+export class BinActionResult {
+    "Done": number;
+
+    /**
+     * Skipped lists the chosen items that were left alone, with Reason.
+     */
+    "Skipped": BinSkipped[];
+
+    /** Creates a new BinActionResult instance. */
+    constructor($$source: Partial<BinActionResult> = {}) {
+        if (!("Done" in $$source)) {
+            this["Done"] = 0;
+        }
+        if (!("Skipped" in $$source)) {
+            this["Skipped"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BinActionResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BinActionResult {
+        const $$createField1_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Skipped" in $$parsedSource) {
+            $$parsedSource["Skipped"] = $$createField1_0($$parsedSource["Skipped"]);
+        }
+        return new BinActionResult($$parsedSource as Partial<BinActionResult>);
+    }
+}
+
+/**
+ * BinSkipped is a bin item an action left alone.
+ */
+export class BinSkipped {
+    "FileName": string;
+    "Reason": string;
+
+    /** Creates a new BinSkipped instance. */
+    constructor($$source: Partial<BinSkipped> = {}) {
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("Reason" in $$source)) {
+            this["Reason"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BinSkipped instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BinSkipped {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BinSkipped($$parsedSource as Partial<BinSkipped>);
+    }
+}
+
+// Private type creation functions
+const $$createType0 = BinSkipped.createFrom;
+const $$createType1 = $Create.Array($$createType0);

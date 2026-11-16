@@ -11,5 +11,7 @@ export {
 };
 
 export {
-    AppInfo
+    AppInfo,
+    BinActionResult,
+    BinSkipped
 } from "./models.js";

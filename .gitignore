@@ -20,12 +20,17 @@ library-index.json
 sha1.cache.json
 upload-journal.json
 live-photo-repairs.json
+quota-conversion.json
+upload-history.json
+avatars/
 .gotohp-config-*
 .stats-*
 .library-index-*
 .sha1-cache-*
 .upload-journal-*
 .live-photo-repairs-*
+.quota-conversion-*
+.upload-history-*
 # Nix
 /result
 /result-*

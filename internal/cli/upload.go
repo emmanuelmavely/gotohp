@@ -351,6 +351,12 @@ func (r teaReporter) ThreadStatus(status core.ThreadStatus) {
 }
 
 func (r teaReporter) FileResult(result core.FileUploadResult) {
+	// A file stopped by Ctrl+C did not upload; the journal keeps it for
+	// --resume. Report it as not done rather than as a success.
+	if result.Interrupted {
+		result.IsError = true
+		result.Error = fmt.Errorf("stopped before it finished; run upload --resume to continue")
+	}
 	r.p.Send(fileCompleteMsg{
 		success:    !result.IsError && !result.Skipped,
 		skipped:    result.Skipped,

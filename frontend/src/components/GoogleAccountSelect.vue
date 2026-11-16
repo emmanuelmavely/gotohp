@@ -19,6 +19,10 @@ interface Props {
   modelValue?: string
   options?: string[]
   removingAccount?: string
+  /** The selected account's photo as a data: URL; its initial is shown without one. */
+  photo?: string
+  /** Shows only the photo, for a narrow sidebar. */
+  compact?: boolean
 }
 
 interface Emits {
@@ -31,6 +35,8 @@ const props = withDefaults(defineProps<Props>(), {
   modelValue: '',
   options: () => [],
   removingAccount: '',
+  photo: '',
+  compact: false,
 })
 
 const emit = defineEmits<Emits>()
@@ -56,15 +62,27 @@ watch(selectedValue, (newValue) => {
   >
     <SelectTrigger
       size="sm"
-      class="max-w-64 cursor-pointer gap-1.5 border-transparent bg-transparent pr-2 pl-1 shadow-none select-none hover:bg-accent dark:bg-transparent dark:hover:bg-accent"
+      class="w-full cursor-pointer gap-2 border-transparent bg-transparent pr-2 pl-1 shadow-none select-none hover:bg-accent dark:bg-transparent dark:hover:bg-accent"
+      :class="compact && 'justify-center px-0 [&>svg:last-child]:hidden'"
       style="--wails-draggable: none"
       aria-label="Google account"
+      :title="selectedValue"
     >
+      <img
+        v-if="photo"
+        :src="photo"
+        alt=""
+        class="size-6 shrink-0 rounded-full object-cover"
+      >
       <span
+        v-else
         class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary uppercase"
         aria-hidden="true"
       >{{ selectedValue ? selectedValue[0] : '?' }}</span>
-      <span class="min-w-0 truncate">
+      <span
+        v-if="!compact"
+        class="min-w-0 flex-1 truncate text-left text-xs"
+      >
         <SelectValue placeholder="Select account" />
       </span>
     </SelectTrigger>

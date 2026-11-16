@@ -11,6 +11,8 @@ import { debugEnabled } from '@/utils/debug'
 import { thumbnailsEnabled } from '@/utils/thumbnails'
 import { closeBehavior, type CloseBehavior } from '@/utils/closeBehavior'
 import NotesSheet from '@/components/NotesSheet.vue'
+import DuplicateAlbums from '@/components/DuplicateAlbums.vue'
+import AlbumTakeaway from '@/components/AlbumTakeaway.vue'
 import {
     appUpdate,
     autoCheckUpdates,
@@ -23,6 +25,7 @@ import {
 } from '@/utils/appUpdate'
 import { minuteClock } from '@/utils/accountStorage'
 import { formatTimeAgo } from '@/utils/format'
+import { albumStore } from '@/utils/albums'
 
 const changelogOpen = ref(false)
 const changelog = ref('')
@@ -52,6 +55,23 @@ const updateStatus = computed(() => {
     if (!update.Latest) return `No releases published yet${checked}`
     return `Up to date${checked}`
 })
+
+const speedLimitRows = [
+    {
+        id: 'upload-limit',
+        key: 'uploadLimitMB',
+        configKey: 'uploadLimitKBps',
+        title: 'Upload speed limit (MB/s)',
+        description: 'Total for all upload threads. Changes apply right away, also to a running upload.',
+    },
+    {
+        id: 'download-limit',
+        key: 'downloadLimitMB',
+        configKey: 'downloadLimitKBps',
+        title: 'Download speed limit (MB/s)',
+        description: 'Used by the Live Photo repair.',
+    },
+] as const
 
 const closeOptions: { value: CloseBehavior, label: string }[] = [
   { value: 'ask', label: 'Ask' },
@@ -83,8 +103,25 @@ interface Settings {
     uploadThreads: number
     watchEnabled: boolean
     watchFolders: string[]
+    /** Watch folder → album key; folders without one upload without an album. */
+    watchAlbums: Record<string, string>
     startWithWindows: boolean
+    /** Speed limits in MB/s for the inputs; 0 = no limit. Saved as KB/s. */
+    uploadLimitMB: number
+    downloadLimitMB: number
 }
+
+/** The speed-limit part of the config; older bindings do not declare it yet. */
+interface SpeedLimitConfig {
+    uploadLimitKBps?: number
+    downloadLimitKBps?: number
+}
+const setSpeedLimits = (ConfigManager as unknown as {
+    SetSpeedLimits?: (uploadKBps: number, downloadKBps: number) => Promise<void>
+}).SetSpeedLimits
+
+const toMB = (kbps: number | undefined) => Math.round(((kbps ?? 0) / 1024) * 10) / 10
+const toKBps = (mb: number) => Math.max(0, Math.round((Number.isFinite(mb) ? mb : 0) * 1024))
 
 const settings = ref<Settings>({
     proxy: '',
@@ -101,7 +138,10 @@ const settings = ref<Settings>({
     uploadThreads: 0,
     watchEnabled: false,
     watchFolders: [],
-    startWithWindows: false
+    watchAlbums: {},
+    startWithWindows: false,
+    uploadLimitMB: 0,
+    downloadLimitMB: 0,
 })
 const isHydrating = ref(true)
 const isPickingFolder = ref(false)
@@ -130,6 +170,45 @@ async function addWatchFolder() {
     }
 }
 
+/** Reads "folder|album" entries. */
+function parseWatchAlbums(entries: string[] | null | undefined): Record<string, string> {
+    const albums: Record<string, string> = {}
+    for (const entry of entries ?? []) {
+        const at = entry.indexOf('|')
+        if (at > 0 && entry.slice(at + 1).trim()) albums[entry.slice(0, at)] = entry.slice(at + 1).trim()
+    }
+    return albums
+}
+
+const setWatchFolderAlbum = (ConfigManager as unknown as {
+    SetWatchFolderAlbum?: (folder: string, album: string) => Promise<void>
+}).SetWatchFolderAlbum
+
+/** Albums for the watch folder menus, by title. */
+const albumChoices = computed(() =>
+    [...albumStore.albums].sort((a, b) => a.Title.localeCompare(b.Title)),
+)
+
+function watchAlbumOf(folder: string): string {
+    const match = Object.keys(settings.value.watchAlbums).find(key => key.toLowerCase() === folder.toLowerCase())
+    return match ? settings.value.watchAlbums[match] ?? '' : ''
+}
+
+async function changeWatchAlbum(folder: string, album: string) {
+    if (!setWatchFolderAlbum) return
+    try {
+        await setWatchFolderAlbum(folder, album)
+        const next = { ...settings.value.watchAlbums }
+        for (const key of Object.keys(next)) {
+            if (key.toLowerCase() === folder.toLowerCase()) delete next[key]
+        }
+        if (album) next[folder] = album
+        settings.value.watchAlbums = next
+    } catch (error) {
+        console.error('Failed to set the watch folder album:', error)
+    }
+}
+
 async function removeWatchFolder(folder: string) {
     await ConfigManager.RemoveWatchFolder(folder)
     settings.value.watchFolders = settings.value.watchFolders.filter(f => f !== folder)
@@ -155,7 +234,10 @@ onMounted(async () => {
             uploadThreads: config.uploadThreads || 1,
             watchEnabled: config.watchEnabled || false,
             watchFolders: config.watchFolders || [],
-            startWithWindows: config.startWithWindows || false
+            watchAlbums: parseWatchAlbums((config as { watchAlbums?: string[] | null }).watchAlbums),
+            startWithWindows: config.startWithWindows || false,
+            uploadLimitMB: toMB((config as SpeedLimitConfig).uploadLimitKBps),
+            downloadLimitMB: toMB((config as SpeedLimitConfig).downloadLimitKBps),
         }
     } finally {
         await nextTick()
@@ -239,6 +321,12 @@ watch(() => settings.value.watchEnabled, async (newValue) => {
     notifyWatchSettingsChanged()
 })
 
+// Limits apply at once, also to an upload or repair already running.
+watch(() => [settings.value.uploadLimitMB, settings.value.downloadLimitMB], async ([upload, download]) => {
+    if (isHydrating.value || !setSpeedLimits) return
+    await setSpeedLimits(toKBps(upload ?? 0), toKBps(download ?? 0))
+})
+
 watch(() => settings.value.startWithWindows, async (newValue) => {
     if (isHydrating.value) return
     await ConfigManager.SetStartWithWindows(newValue)
@@ -246,7 +334,7 @@ watch(() => settings.value.startWithWindows, async (newValue) => {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-5">
+  <div class="flex flex-col gap-4">
     <section class="flex flex-col gap-1.5">
       <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
         Upload
@@ -423,6 +511,39 @@ watch(() => settings.value.startWithWindows, async (newValue) => {
           class="font-mono text-xs"
         />
       </div>
+      <div
+        v-if="setSpeedLimits"
+        class="divide-y overflow-hidden rounded-xl border bg-card"
+      >
+        <SettingRow
+          v-for="limit in speedLimitRows"
+          :key="limit.id"
+          :control-id="limit.id"
+          :title="limit.title"
+          :description="settings[limit.key] > 0
+            ? `${limit.description} Now ${settings[limit.key]} MB/s; set 0 to remove the limit.`
+            : `${limit.description} Now unlimited.`"
+          :config-key="limit.configKey"
+        >
+          <NumberField
+            :id="limit.id"
+            v-model="settings[limit.key]"
+            :min="0"
+            :step="0.5"
+            :format-options="{ maximumFractionDigits: 1 }"
+            class="w-32 shrink-0"
+          >
+            <NumberFieldContent>
+              <NumberFieldDecrement
+                class="cursor-pointer"
+                :disabled="settings[limit.key] <= 0"
+              />
+              <NumberFieldInput />
+              <NumberFieldIncrement class="cursor-pointer" />
+            </NumberFieldContent>
+          </NumberField>
+        </SettingRow>
+      </div>
     </section>
 
     <section class="flex flex-col gap-1.5">
@@ -452,6 +573,31 @@ watch(() => settings.value.startWithWindows, async (newValue) => {
               class="group flex items-center gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5"
             >
               <span class="min-w-0 flex-1 truncate font-mono text-xs select-text">{{ folder }}</span>
+              <select
+                v-if="setWatchFolderAlbum"
+                class="h-7 max-w-40 shrink-0 cursor-pointer truncate rounded-md border bg-background px-1.5 text-xs"
+                :value="watchAlbumOf(folder)"
+                :aria-label="`Album for new files in ${folder}`"
+                title="Album new files from this folder go to"
+                @change="changeWatchAlbum(folder, ($event.target as HTMLSelectElement).value)"
+              >
+                <option value="">
+                  No album
+                </option>
+                <option
+                  v-if="watchAlbumOf(folder) && !albumChoices.some(album => album.MediaKey === watchAlbumOf(folder))"
+                  :value="watchAlbumOf(folder)"
+                >
+                  {{ watchAlbumOf(folder).startsWith('AF1Qip') ? 'Album not in the list' : watchAlbumOf(folder) }}
+                </option>
+                <option
+                  v-for="album in albumChoices"
+                  :key="album.MediaKey"
+                  :value="album.MediaKey"
+                >
+                  {{ album.Title }}
+                </option>
+              </select>
               <button
                 type="button"
                 class="shrink-0 cursor-pointer rounded p-1 text-muted-foreground select-none hover:bg-destructive/10 hover:text-destructive"
@@ -478,7 +624,23 @@ watch(() => settings.value.startWithWindows, async (newValue) => {
             <FolderPlus class="size-3.5" />
             {{ isPickingFolder ? 'Picking…' : 'Add folder' }}
           </Button>
+          <p
+            v-if="setWatchFolderAlbum && settings.watchFolders.length"
+            class="text-[11px] leading-snug text-muted-foreground"
+          >
+            Each folder can add its new files to one of your albums. The album you pick for a dropped upload is never used here.
+          </p>
         </div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-1.5">
+      <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
+        Albums
+      </h3>
+      <div class="divide-y overflow-hidden rounded-xl border bg-card">
+        <DuplicateAlbums />
+        <AlbumTakeaway />
       </div>
     </section>
 

@@ -3,12 +3,14 @@ import { computed } from 'vue'
 import { useColorMode } from '@vueuse/core'
 import { formatBytes } from '@/utils/format'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   /** Network throughput samples (bytes/s), one per second. */
   network: number[]
   /** Local disk read throughput samples (bytes/s), one per second. */
   disk: number[]
-}>()
+  networkLabel?: string
+  diskLabel?: string
+}>(), { networkLabel: 'Upload', diskLabel: 'Disk read' })
 
 const WIDTH = 600
 const HEIGHT = 120
@@ -62,14 +64,14 @@ const scaleLabel = computed(() => formatBytes(maxValue.value))
             class="inline-block size-2 rounded-full"
             :style="{ backgroundColor: strokeColors.network }"
           />
-          <span class="text-muted-foreground">Upload</span>
+          <span class="text-muted-foreground">{{ networkLabel }}</span>
         </span>
         <span class="flex items-center gap-1.5">
           <span
             class="inline-block size-2 rounded-full"
             :style="{ backgroundColor: strokeColors.disk }"
           />
-          <span class="text-muted-foreground">Disk read</span>
+          <span class="text-muted-foreground">{{ diskLabel }}</span>
         </span>
       </div>
       <span class="text-muted-foreground tabular-nums">peak {{ scaleLabel }}/s</span>
@@ -79,7 +81,7 @@ const scaleLabel = computed(() => formatBytes(maxValue.value))
       preserveAspectRatio="none"
       class="block h-24 w-full"
       role="img"
-      aria-label="Upload and disk read throughput over the last two minutes"
+      :aria-label="`${networkLabel} and ${diskLabel} throughput over the last two minutes`"
     >
       <line
         :x1="PADDING"

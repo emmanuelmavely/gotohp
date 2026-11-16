@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
-import { CircleCheck, CircleX, ExternalLink, RefreshCw, ScanSearch, SkipForward, Wrench } from '@lucide/vue'
+import { CircleCheck, CircleX, ExternalLink, ScanSearch, SkipForward, Wrench } from '@lucide/vue'
 import { LibraryService } from '../bindings/app/internal/gui'
 import type {
   LivePhotoRepairCandidate,
@@ -12,40 +12,20 @@ import type {
 import { Button } from '@/components/ui/button'
 import LibraryScanLive from '@/components/LibraryScanLive.vue'
 import LivePhotoRepairLive from '@/components/LivePhotoRepairLive.vue'
-import BinPanel from '@/components/BinPanel.vue'
 import { liveRepair, runLivePhotoRepair } from '@/utils/liveRepair'
+import { uploadManager } from '@/utils/UploadManager'
 import { openInGooglePhotos } from '@/utils/googlePhotos'
-import {
-  accountStorage,
-  beginLibraryScan,
-  calculateAccountStorage,
-  endLibraryScan,
-  libraryScan,
-  minuteClock,
-  storageCountedAt,
-} from '@/utils/accountStorage'
+import { beginLibraryScan, endLibraryScan, libraryScan } from '@/utils/accountStorage'
 import { debugLog } from '@/utils/debug'
-import { formatBytes, formatDuration, formatTimeAgo } from '@/utils/format'
+import { formatBytes, formatDuration } from '@/utils/format'
+
+/** Which part to show: the transfer totals, or the Live Photo repair. */
+defineProps<{ view: 'activity' | 'live' }>()
 
 const DAYS_SHOWN = 30
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-// --- Account storage ---------------------------------------------------------
-const storage = computed(() => accountStorage.data)
-
-const syncedAtText = computed(() => {
-  const countedAt = storageCountedAt(storage.value)
-  if (!countedAt) return ''
-  return `${formatTimeAgo(countedAt, minuteClock.value)} · ${new Date(countedAt).toLocaleString()}`
-})
-
-async function refreshStorage() {
-  if (!await calculateAccountStorage()) {
-    toast.error('Could not read account storage', { description: accountStorage.error })
-  }
 }
 
 // --- Cumulative statistics ---------------------------------------------------
@@ -123,6 +103,8 @@ const isConfirming = ref(false)
 const selectedStems = ref<string[]>([])
 // The batch lives in a shared store, so it survives closing this sheet
 const isRepairing = computed(() => liveRepair.running)
+// A repair uploads too; it waits until the running upload is done or paused.
+const uploadRunning = computed(() => uploadManager.state.isUploading || uploadManager.state.isStarting)
 const outcomes = computed<LivePhotoRepairOutcome[]>(() => liveRepair.outcomes)
 
 /** The repaired photo's media key; backends built before the link do not send it. */
@@ -224,90 +206,12 @@ async function repairSelected() {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-5">
-    <!-- Account storage -->
-    <section class="flex flex-col gap-1.5">
-      <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
-        Account storage
-      </h3>
-      <LibraryScanLive v-if="accountStorage.loading" />
-      <div
-        v-else
-        class="rounded-xl border bg-card p-3"
-      >
-        <div class="flex items-center gap-3">
-          <div class="min-w-0 flex-1">
-            <template v-if="storage">
-              <p class="text-2xl leading-none font-semibold tracking-tight tabular-nums">
-                {{ formatBytes(storage.Summary.TotalBytes, 2) }}
-              </p>
-              <p class="mt-1.5 text-xs text-muted-foreground tabular-nums">
-                used by {{ storage.Summary.ItemCount.toLocaleString() }} files that count against your quota
-                <template v-if="storageCountedAt(storage)">
-                  · counted {{ formatTimeAgo(storageCountedAt(storage), minuteClock) }}
-                </template>
-              </p>
-            </template>
-            <p
-              v-else
-              class="text-sm text-muted-foreground"
-            >
-              Counts the storage your photos really use, from your library. The first count can take several minutes.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            class="shrink-0 cursor-pointer"
-            :disabled="isLibraryBusy"
-            @click="refreshStorage"
-          >
-            <RefreshCw />
-            {{ storage ? 'Refresh' : 'Calculate' }}
-          </Button>
-        </div>
-        <dl
-          v-if="storage"
-          class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 border-t pt-3 text-xs"
-        >
-          <dt class="text-muted-foreground">
-            Library entries
-          </dt>
-          <dd class="text-right tabular-nums">
-            {{ storage.Items.toLocaleString() }}
-          </dd>
-          <dt class="text-muted-foreground">
-            Size of everything in the library
-          </dt>
-          <dd class="text-right tabular-nums">
-            {{ formatBytes(storage.LibraryBytes, 2) }}
-          </dd>
-          <template v-if="storage.Summary.TrashedBytes > 0">
-            <dt class="text-amber-300">
-              In trash, still counted
-            </dt>
-            <dd class="text-right text-amber-300 tabular-nums">
-              {{ formatBytes(storage.Summary.TrashedBytes, 2) }} · {{ storage.Summary.TrashedCount.toLocaleString() }} files
-            </dd>
-          </template>
-          <dt class="text-muted-foreground">
-            Counted
-          </dt>
-          <dd class="text-right tabular-nums">
-            {{ syncedAtText }}
-          </dd>
-        </dl>
-        <p
-          v-if="accountStorage.error"
-          class="mt-3 text-xs break-words text-destructive"
-        >
-          {{ accountStorage.error }}
-        </p>
-      </div>
-    </section>
-
+  <div class="flex flex-col gap-4">
     <!-- Totals -->
-    <section class="flex flex-col gap-1.5">
+    <section
+      v-if="view === 'activity'"
+      class="flex flex-col gap-1.5"
+    >
       <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
         This app, all time
       </h3>
@@ -328,7 +232,10 @@ async function repairSelected() {
     </section>
 
     <!-- Daily uploads -->
-    <section class="flex flex-col gap-1.5">
+    <section
+      v-if="view === 'activity'"
+      class="flex flex-col gap-1.5"
+    >
       <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
         Uploaded per day · last {{ DAYS_SHOWN }} days
       </h3>
@@ -366,7 +273,10 @@ async function repairSelected() {
     </section>
 
     <!-- Live Photo repair -->
-    <section class="flex flex-col gap-1.5">
+    <section
+      v-if="view === 'live'"
+      class="flex flex-col gap-1.5"
+    >
       <h3 class="px-1 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
         Live Photo repair
       </h3>
@@ -481,6 +391,7 @@ async function repairSelected() {
                 <Button
                   size="sm"
                   class="cursor-pointer"
+                  :disabled="uploadRunning"
                   @click="repairSelected"
                 >
                   Repair {{ selectedStems.length }} pair(s)
@@ -491,11 +402,11 @@ async function repairSelected() {
               v-else
               size="sm"
               class="mt-3 w-full cursor-pointer"
-              :disabled="selectedStems.length === 0 || isRepairing"
+              :disabled="selectedStems.length === 0 || isRepairing || uploadRunning"
               @click="isConfirming = true"
             >
               <Wrench :class="isRepairing && 'animate-pulse'" />
-              {{ isRepairing ? 'Repairing… this can take a while' : `Repair selected (${selectedStems.length})` }}
+              {{ isRepairing ? 'Repairing… this can take a while' : uploadRunning ? 'Repair waits until the upload finishes' : `Repair selected (${selectedStems.length})` }}
             </Button>
           </template>
 
@@ -603,8 +514,5 @@ async function repairSelected() {
         </ul>
       </div>
     </section>
-
-    <!-- Bin -->
-    <BinPanel />
   </div>
 </template>

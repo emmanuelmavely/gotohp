@@ -120,6 +120,14 @@ export function SetSkipIncompleteLivePhotos(skipIncompleteLivePhotos: boolean): 
     return $Call.ByID(424242511, skipIncompleteLivePhotos);
 }
 
+/**
+ * SetSpeedLimits saves the upload and download limits in KB/s (0 = no limit)
+ * and applies them at once, also to transfers already running.
+ */
+export function SetSpeedLimits(uploadKBps: number, downloadKBps: number): $CancellablePromise<void> {
+    return $Call.ByID(1388280618, uploadKBps, downloadKBps);
+}
+
 export function SetStartWithWindows(enabled: boolean): $CancellablePromise<void> {
     return $Call.ByID(1935832154, enabled);
 }
@@ -140,6 +148,24 @@ export function SetWatchEnabled(enabled: boolean): $CancellablePromise<void> {
     return $Call.ByID(884871839, enabled);
 }
 
+/**
+ * SetWatchFolderAlbum sets the album (a name or key) new files in a watch
+ * folder go to; an empty album means none.
+ */
+export function SetWatchFolderAlbum(folder: string, album: string): $CancellablePromise<void> {
+    return $Call.ByID(722906265, folder, album);
+}
+
+/**
+ * WatchFolderAlbums maps each watch folder that has an album to it.
+ */
+export function WatchFolderAlbums(): $CancellablePromise<{ [_ in string]?: string }> {
+    return $Call.ByID(3947720312).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 // Private type creation functions
 const $$createType0 = $models.AccountsState.createFrom;
 const $$createType1 = $models.Preferences.createFrom;
+const $$createType2 = $Create.Map($Create.Any, $Create.Any);

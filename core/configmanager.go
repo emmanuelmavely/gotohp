@@ -46,9 +46,18 @@ type Preferences struct {
 	// policy for watched files is the ordinary preference set above.
 	WatchEnabled bool     `json:"watchEnabled" koanf:"watch_enabled"`
 	WatchFolders []string `json:"watchFolders" koanf:"watch_folders"`
+	// WatchAlbums gives a watch folder its own album, as "folder|album"
+	// entries (an album name or key). Folders without an entry upload
+	// without an album; a watched upload never uses the album picked for a
+	// dropped batch.
+	WatchAlbums []string `json:"watchAlbums" koanf:"watch_albums"`
 	// StartWithWindows registers the GUI in the user's autostart registry
 	// key (Windows only).
 	StartWithWindows bool `json:"startWithWindows" koanf:"start_with_windows"`
+	// UploadLimitKBps and DownloadLimitKBps cap transfer speed in KB/s for
+	// the whole app; 0 means no limit.
+	UploadLimitKBps   int `json:"uploadLimitKBps" koanf:"upload_limit_kbps"`
+	DownloadLimitKBps int `json:"downloadLimitKBps" koanf:"download_limit_kbps"`
 	// AlbumName and AlbumAutoMode are per-session choices and are never persisted.
 	AlbumName     string `json:"albumName" koanf:"-"`
 	AlbumAutoMode bool   `json:"albumAutoMode" koanf:"-"`
@@ -120,6 +129,7 @@ var (
 		SkipIncompleteLivePhotos: true,
 		UploadThreads:            3,
 		WatchFolders:             []string{},
+		WatchAlbums:              []string{},
 	}
 	DefaultConfig = Config{Preferences: DefaultPreferences}
 )
@@ -209,6 +219,26 @@ func (g *ConfigManager) SetDisableUnsupportedFilesFilter(disableUnsupportedFiles
 	})
 }
 
+// SetSpeedLimits saves the upload and download limits in KB/s (0 = no limit)
+// and applies them at once, also to transfers already running.
+func (g *ConfigManager) SetSpeedLimits(uploadKBps, downloadKBps int) {
+	uploadKBps, downloadKBps = max(uploadKBps, 0), max(downloadKBps, 0)
+	updateAppConfig(func(config *Config) {
+		config.Preferences.UploadLimitKBps = uploadKBps
+		config.Preferences.DownloadLimitKBps = downloadKBps
+	})
+	ApplySpeedLimits(uploadKBps, downloadKBps)
+}
+
+// ApplySavedSpeedLimits applies the limits stored in the config. The GUI
+// calls it once at start.
+//
+//wails:ignore
+func (g *ConfigManager) ApplySavedSpeedLimits() {
+	settings := g.GetSettings()
+	ApplySpeedLimits(settings.UploadLimitKBps, settings.DownloadLimitKBps)
+}
+
 func (g *ConfigManager) SetUploadThreads(uploadThreads int) {
 	if uploadThreads < 1 {
 		return
@@ -283,7 +313,24 @@ func (g *ConfigManager) RemoveWatchFolder(folder string) {
 			}
 		}
 		config.Preferences.WatchFolders = remaining
+		config.Preferences.WatchAlbums = setWatchAlbum(config.Preferences.WatchAlbums, folder, "")
 	})
+}
+
+// SetWatchFolderAlbum sets the album (a name or key) new files in a watch
+// folder go to; an empty album means none.
+func (g *ConfigManager) SetWatchFolderAlbum(folder string, album string) {
+	updateAppConfig(func(config *Config) {
+		config.Preferences.WatchAlbums = setWatchAlbum(config.Preferences.WatchAlbums, folder, album)
+	})
+}
+
+// WatchFolderAlbums maps each watch folder that has an album to it.
+func (g *ConfigManager) WatchFolderAlbums() map[string]string {
+	ensureConfigLoaded()
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return ParseWatchAlbums(AppConfig.Preferences.WatchAlbums)
 }
 
 func (g *ConfigManager) SetStartWithWindows(enabled bool) {
@@ -783,9 +830,12 @@ func loadConfigLocked() error {
 		AppConfig = loadAppConfig()
 		_ = os.Chmod(ConfigPath, 0o600)
 	}
-	// Keep the slice non-nil so configs round-trip identically.
+	// Keep the slices non-nil so configs round-trip identically.
 	if AppConfig.Preferences.WatchFolders == nil {
 		AppConfig.Preferences.WatchFolders = []string{}
+	}
+	if AppConfig.Preferences.WatchAlbums == nil {
+		AppConfig.Preferences.WatchAlbums = []string{}
 	}
 
 	return nil

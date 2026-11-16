@@ -42,10 +42,16 @@ type UploadManager struct {
 	// it automatically when connectivity returns. Only the GUI enables it;
 	// the CLI ends the run and leaves the journal for an explicit resume.
 	autoResume bool
-	// paused is true between a network pause and the automatic resume. A
+	// paused is true between a pause (network or user) and the resume. A
 	// user cancel during the pause also discards the journal.
 	paused bool
+	// userPaused marks a pause the user asked for; it only ends with
+	// ResumePaused or Cancel, never automatically.
+	userPaused bool
 }
+
+// UserPauseReason is reported when the user pauses an upload.
+const UserPauseReason = "Paused by you. Files that were uploading start again from the beginning when you resume."
 
 // NewUploadManager creates a manager that reports progress to reporter. A nil
 // reporter or logger discards output.
@@ -88,12 +94,74 @@ func (m *UploadManager) Cancel() {
 		m.canceled = true
 		// Don't set to nil - readers still need to detect closure via select
 	}
-	// A cancel during a network pause ends the stopped run for good: drop
-	// the journal so the next start does not offer it again.
+	// A cancel during a pause ends the stopped run for good: drop the
+	// journal so the next start does not offer it again.
 	if m.paused {
 		m.paused = false
+		m.userPaused = false
 		go DiscardUploadJournal()
 	}
+}
+
+// IsPaused reports whether a run is paused, by the user or by a network loss.
+func (m *UploadManager) IsPaused() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.paused
+}
+
+// Pause stops the running upload but keeps its journal, so ResumePaused
+// continues with the files not yet uploaded. Files in flight are stopped and
+// start again from the beginning on resume. It reports whether a run was
+// paused.
+func (m *UploadManager) Pause() bool {
+	m.mu.Lock()
+	if !m.running || m.paused || m.canceled || m.cancel == nil {
+		m.mu.Unlock()
+		return false
+	}
+	m.paused = true
+	m.userPaused = true
+	close(m.cancel)
+	m.canceled = true
+	m.mu.Unlock()
+
+	m.reporter.UploadPaused(UserPauseReason)
+	m.logger.Info("upload paused by user")
+	return true
+}
+
+// ResumePaused continues a paused run (user or network pause) from its
+// journal once the stopped run has wound down. It reports whether a pause
+// was waiting to be resumed.
+func (m *UploadManager) ResumePaused() bool {
+	m.mu.Lock()
+	if !m.paused {
+		m.mu.Unlock()
+		return false
+	}
+	m.mu.Unlock()
+
+	go func() {
+		// The stopped run saves its journal when it finishes.
+		deadline := time.Now().Add(2 * time.Minute)
+		for m.IsRunning() && time.Now().Before(deadline) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		m.mu.Lock()
+		if !m.paused || m.running {
+			m.mu.Unlock()
+			return
+		}
+		m.paused = false
+		m.userPaused = false
+		m.mu.Unlock()
+		m.logger.Info("resuming paused upload")
+		if !m.Resume() {
+			m.logger.Warn("resume after pause failed")
+		}
+	}()
+	return true
 }
 
 // SetAutoResume enables pausing and automatic resuming on network failures.
@@ -148,6 +216,10 @@ type FileUploadResult struct {
 	// Transferred is true only when the bytes actually went over the wire.
 	// False for hash-check hits, skipped duplicates, and errors.
 	Transferred bool `json:"Transferred"`
+	// Interrupted is true when a pause or cancel stopped the item before it
+	// finished. It is not a failure: the journal keeps the item pending, so
+	// a resume uploads it again.
+	Interrupted bool `json:"Interrupted"`
 }
 
 type ThreadStatus struct {
@@ -174,9 +246,10 @@ func (m *UploadManager) Upload(paths []string, opts UploadOptions) {
 	m.cancel = make(chan struct{})
 	m.canceled = false
 	m.apiOptions = opts.Api
-	// A fresh run supersedes any network pause. Its journal replaces the
-	// paused run's journal, whose pending items are dropped.
+	// A fresh run supersedes any pause. Its journal replaces the paused
+	// run's journal, whose pending items are dropped.
 	m.paused = false
+	m.userPaused = false
 	if opts.HashCache == nil {
 		if m.hashCache == nil {
 			m.hashCache = NewHashCache(HashCachePath())
@@ -400,10 +473,11 @@ func (m *UploadManager) runWorkItems(workItems []UploadWorkItem, opts UploadOpti
 			close(results)
 		}()
 
-			// Process all results (this blocks until results channel is closed)
+		// Process all results (this blocks until results channel is closed)
 		lastJournalSave := time.Now()
 		consecutiveNetFails := 0
 		var runBytes, runFiles, runFails, runSkips int64
+		history := UploadRun{StartedAt: runStart.UnixMilli(), Album: opts.AlbumName, AlbumAuto: opts.AlbumAutoMode}
 		for result := range results {
 			m.reporter.FileResult(result)
 			journal.RecordResult(result)
@@ -412,8 +486,16 @@ func (m *UploadManager) runWorkItems(workItems []UploadWorkItem, opts UploadOpti
 				lastJournalSave = time.Now()
 			}
 			switch {
+			case result.Interrupted:
+				// Stays pending in the journal; counts as neither done nor failed.
+				history.Stopped++
 			case result.IsError:
 				runFails++
+				message := result.ErrorMessage
+				if message == "" && result.Error != nil {
+					message = result.Error.Error()
+				}
+				history.Failures = append(history.Failures, UploadFailure{Path: result.Path, Message: message})
 				m.logger.Error("upload error", "path", result.Path, "error", result.Error)
 				// Repeated network failures mean the connection is gone:
 				// pause the run instead of failing everything.
@@ -445,7 +527,7 @@ func (m *UploadManager) runWorkItems(workItems []UploadWorkItem, opts UploadOpti
 			"albumName", opts.AlbumName, "albumAutoMode", opts.AlbumAutoMode)
 
 		if len(successfulUploads) > 0 {
-			m.handleAlbumCreation(successfulUploads, opts.AlbumName, opts.AlbumAutoMode)
+			history.AlbumError = m.handleAlbumCreation(successfulUploads, opts.AlbumName, opts.AlbumAutoMode)
 		}
 
 		m.mu.Lock()
@@ -461,6 +543,8 @@ func (m *UploadManager) runWorkItems(workItems []UploadWorkItem, opts UploadOpti
 		}
 
 		RecordUploadRun(runBytes, runFiles, runFails, runSkips, int64(time.Since(runStart).Seconds()))
+		history.Uploaded, history.Failed, history.Skipped, history.Bytes = int(runFiles), int(runFails), int(runSkips), runBytes
+		RecordUploadHistory(history)
 
 		m.finish()
 	}()
@@ -510,9 +594,11 @@ func (m *UploadManager) waitAndResume() {
 		paused := m.paused
 		running := m.running
 		autoResume := m.autoResume
+		userPaused := m.userPaused
 		m.mu.Unlock()
-		// The pause was resolved another way (user cancel or a new upload).
-		if !paused || !autoResume {
+		// The pause was resolved another way (user cancel or a new upload),
+		// or the user paused on purpose and resumes by hand.
+		if !paused || !autoResume || userPaused {
 			return
 		}
 		// Let the stopped run wind down so the journal is fully saved.
@@ -576,12 +662,13 @@ func isSkippedPreflightWarning(code string) bool {
 	return code == "incomplete-live-photo-skipped" || code == "ambiguous-filename-stem"
 }
 
-// handleAlbumCreation handles album creation based on config (manual name/key or AUTO mode)
-func (m *UploadManager) handleAlbumCreation(uploads map[string]string, albumName string, albumAutoMode bool) {
+// handleAlbumCreation handles album creation based on config (manual name/key
+// or AUTO mode). It returns what went wrong, or "" when every album worked.
+func (m *UploadManager) handleAlbumCreation(uploads map[string]string, albumName string, albumAutoMode bool) string {
 	// Check if cancelled before starting album creation
 	if m.isCancelled() {
 		m.logger.Info("Upload cancelled, skipping album creation")
-		return
+		return ""
 	}
 
 	m.logger.Info(fmt.Sprintf("handleAlbumCreation called with %d uploads", len(uploads)))
@@ -594,7 +681,7 @@ func (m *UploadManager) handleAlbumCreation(uploads map[string]string, albumName
 			AlbumName: albumName,
 			Error:     fmt.Sprintf("failed to initialize API: %v", err),
 		})
-		return
+		return err.Error()
 	}
 
 	albumManager := NewAlbumManager(api, m.reporter, m.logger, m.getCancelChan())
@@ -602,14 +689,13 @@ func (m *UploadManager) handleAlbumCreation(uploads map[string]string, albumName
 	// Check if AUTO mode is enabled
 	if albumAutoMode {
 		m.logger.Info("AUTO mode enabled, creating albums from directories")
-		m.createAlbumsFromDirectories(albumManager, uploads)
-		return
+		return m.createAlbumsFromDirectories(albumManager, uploads)
 	}
 
 	// Manual mode: use AlbumName if set
 	if albumName == "" {
 		m.logger.Info("No album name set and AUTO mode disabled, skipping album creation")
-		return
+		return ""
 	}
 
 	m.logger.Info(fmt.Sprintf("Creating album with name/key: '%s'", albumName))
@@ -624,17 +710,23 @@ func (m *UploadManager) handleAlbumCreation(uploads map[string]string, albumName
 	albumKeys, err := albumManager.AddToAlbum(mediaKeys, albumName)
 	if err != nil {
 		m.logger.Error(fmt.Sprintf("failed to create album '%s': %v", albumName, err))
+		// The files are uploaded either way; the error carries their keys so
+		// the user can put them in another album.
 		m.reporter.AlbumError(AlbumError{
 			AlbumName: albumName,
 			Error:     err.Error(),
+			NotFound:  IsAlbumKey(albumName) && IsAlbumNotFound(err),
+			MediaKeys: mediaKeys,
 		})
-		return
+		return err.Error()
 	}
 	m.logger.Info(fmt.Sprintf("created album '%s' with %d items, album keys: %v", albumName, len(mediaKeys), albumKeys))
+	return ""
 }
 
 // createAlbumsFromDirectories creates albums based on parent directory names (AUTO mode)
-func (m *UploadManager) createAlbumsFromDirectories(albumManager *AlbumManager, uploads map[string]string) {
+func (m *UploadManager) createAlbumsFromDirectories(albumManager *AlbumManager, uploads map[string]string) string {
+	var problems []string
 	// Group media keys by parent directory
 	mediaKeysByDir := make(map[string][]string)
 
@@ -656,11 +748,14 @@ func (m *UploadManager) createAlbumsFromDirectories(albumManager *AlbumManager, 
 			m.reporter.AlbumError(AlbumError{
 				AlbumName: albumName,
 				Error:     err.Error(),
+				MediaKeys: mediaKeys,
 			})
+			problems = append(problems, fmt.Sprintf("%s: %v", albumName, err))
 			continue
 		}
 		m.logger.Info(fmt.Sprintf("created album '%s' with %d items, album keys: %v", albumName, len(mediaKeys), albumKeys))
 	}
+	return strings.Join(problems, "; ")
 }
 
 // supportedFormats is a map of file extensions supported by Google Photos (O(1) lookup)
@@ -1019,6 +1114,16 @@ func (m *UploadManager) runWorker(workerID int, workChan <-chan UploadWorkItem, 
 					FilePath: path,
 					FileName: filepath.Base(path),
 					Message:  fmt.Sprintf("Uploaded, but local cleanup failed: %v", err),
+				})
+			} else if err != nil && ctx.Err() != nil && m.isCancelled() {
+				// Stopped by a pause or cancel, not a failure.
+				results <- FileUploadResult{Interrupted: true, IsLivePhoto: isLivePhoto, Path: path, Paths: paths, Bytes: sumPathSizes(paths)}
+				m.reporter.ThreadStatus(ThreadStatus{
+					WorkerID: workerID,
+					Status:   "idle",
+					FilePath: path,
+					FileName: filepath.Base(path),
+					Message:  "Stopped",
 				})
 			} else if err != nil {
 				results <- FileUploadResult{IsError: true, IsLivePhoto: isLivePhoto, Error: err, ErrorMessage: err.Error(), Path: path, Paths: paths, Bytes: sumPathSizes(paths)}

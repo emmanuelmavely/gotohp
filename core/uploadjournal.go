@@ -175,6 +175,8 @@ func (j *UploadJournal) RecordResult(result FileUploadResult) {
 			continue
 		}
 		switch {
+		case result.Interrupted:
+			// Stopped by a pause or cancel: leave it for the resume.
 		case result.IsError:
 			item.Status = journalItemFailed
 			item.Error = result.ErrorMessage

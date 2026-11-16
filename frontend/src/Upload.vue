@@ -6,7 +6,7 @@ import ThreadProgress from "./components/ThreadProgress.vue"
 import MediaThumb from "./components/MediaThumb.vue"
 import { thumbnailsActive } from './utils/thumbnails'
 import { uploadManager } from './utils/UploadManager'
-import { X, Check, SkipForward, Clock, Zap, Hourglass, FolderPlus, AlertTriangle, ListPlus } from '@lucide/vue'
+import { X, Check, SkipForward, Clock, Zap, Hourglass, FolderPlus, AlertTriangle, ListPlus, Pause } from '@lucide/vue'
 import { debugEnabled } from './utils/debug'
 import { baseName, formatBytes, formatDuration } from './utils/format'
 import ThroughputGraph from './components/ThroughputGraph.vue'
@@ -329,12 +329,24 @@ function warningFiles(paths: string[]): string {
       </div>
     </div>
 
-    <!-- Cancel button - fixed at bottom -->
-    <div class="flex shrink-0 justify-center border-t px-4 py-3">
+    <!-- Pause and cancel - fixed at bottom -->
+    <div class="flex shrink-0 justify-center gap-2 border-t px-4 py-3">
+      <Button
+        v-if="state.totalFiles > 0"
+        variant="outline"
+        size="sm"
+        class="flex-1 cursor-pointer md:max-w-48"
+        title="Stop for now; Resume continues with the files not uploaded yet"
+        :disabled="!!state.paused"
+        @click="() => uploadManager.pauseUpload()"
+      >
+        <Pause :size="14" />
+        Pause
+      </Button>
       <Button
         variant="outline"
         size="sm"
-        class="w-full cursor-pointer md:max-w-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
+        class="flex-1 cursor-pointer md:max-w-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
         @click="() => uploadManager.cancelUpload()"
       >
         <X :size="14" />

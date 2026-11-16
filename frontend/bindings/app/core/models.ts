@@ -132,6 +132,18 @@ export class AlbumError {
     "AlbumName": string;
     "Error": string;
 
+    /**
+     * NotFound is set when the album key no longer exists (deleted, or not
+     * visible to this account).
+     */
+    "NotFound": boolean;
+
+    /**
+     * MediaKeys are the uploaded items that did not reach the album, so they
+     * can be added to another album later.
+     */
+    "MediaKeys": string[];
+
     /** Creates a new AlbumError instance. */
     constructor($$source: Partial<AlbumError> = {}) {
         if (!("AlbumName" in $$source)) {
@@ -139,6 +151,12 @@ export class AlbumError {
         }
         if (!("Error" in $$source)) {
             this["Error"] = "";
+        }
+        if (!("NotFound" in $$source)) {
+            this["NotFound"] = false;
+        }
+        if (!("MediaKeys" in $$source)) {
+            this["MediaKeys"] = [];
         }
 
         Object.assign(this, $$source);
@@ -148,8 +166,53 @@ export class AlbumError {
      * Creates a new AlbumError instance from a string or object.
      */
     static createFrom($$source: any = {}): AlbumError {
+        const $$createField3_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("MediaKeys" in $$parsedSource) {
+            $$parsedSource["MediaKeys"] = $$createField3_0($$parsedSource["MediaKeys"]);
+        }
         return new AlbumError($$parsedSource as Partial<AlbumError>);
+    }
+}
+
+/**
+ * AlbumList is what the album picker shows.
+ */
+export class AlbumList {
+    "Albums": RemoteAlbum[];
+
+    /**
+     * SyncedAt is when the library was last read (Unix seconds); Known is
+     * false when no library scan with albums exists yet.
+     */
+    "SyncedAt": number;
+    "Known": boolean;
+
+    /** Creates a new AlbumList instance. */
+    constructor($$source: Partial<AlbumList> = {}) {
+        if (!("Albums" in $$source)) {
+            this["Albums"] = [];
+        }
+        if (!("SyncedAt" in $$source)) {
+            this["SyncedAt"] = 0;
+        }
+        if (!("Known" in $$source)) {
+            this["Known"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AlbumList instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AlbumList {
+        const $$createField0_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Albums" in $$parsedSource) {
+            $$parsedSource["Albums"] = $$createField0_0($$parsedSource["Albums"]);
+        }
+        return new AlbumList($$parsedSource as Partial<AlbumList>);
     }
 }
 
@@ -202,6 +265,11 @@ export class AlbumStatus {
  */
 export class BinItem {
     "MediaKey": string;
+
+    /**
+     * DedupKey restores or deletes the item.
+     */
+    "DedupKey": string;
     "FileName": string;
     "IsVideo": boolean;
     "SizeBytes": number;
@@ -242,6 +310,9 @@ export class BinItem {
     constructor($$source: Partial<BinItem> = {}) {
         if (!("MediaKey" in $$source)) {
             this["MediaKey"] = "";
+        }
+        if (!("DedupKey" in $$source)) {
+            this["DedupKey"] = "";
         }
         if (!("FileName" in $$source)) {
             this["FileName"] = "";
@@ -317,12 +388,52 @@ export class BinReport {
      * Creates a new BinReport instance from a string or object.
      */
     static createFrom($$source: any = {}): BinReport {
-        const $$createField0_0 = $$createType5;
+        const $$createField0_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Items" in $$parsedSource) {
             $$parsedSource["Items"] = $$createField0_0($$parsedSource["Items"]);
         }
         return new BinReport($$parsedSource as Partial<BinReport>);
+    }
+}
+
+/**
+ * DuplicateAlbumGroup is a set of albums that share a title.
+ */
+export class DuplicateAlbumGroup {
+    "Title": string;
+    "Albums": RemoteAlbum[];
+
+    /**
+     * Items is the total item count across the group.
+     */
+    "Items": number;
+
+    /** Creates a new DuplicateAlbumGroup instance. */
+    constructor($$source: Partial<DuplicateAlbumGroup> = {}) {
+        if (!("Title" in $$source)) {
+            this["Title"] = "";
+        }
+        if (!("Albums" in $$source)) {
+            this["Albums"] = [];
+        }
+        if (!("Items" in $$source)) {
+            this["Items"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DuplicateAlbumGroup instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DuplicateAlbumGroup {
+        const $$createField1_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Albums" in $$parsedSource) {
+            $$parsedSource["Albums"] = $$createField1_0($$parsedSource["Albums"]);
+        }
+        return new DuplicateAlbumGroup($$parsedSource as Partial<DuplicateAlbumGroup>);
     }
 }
 
@@ -348,6 +459,13 @@ export class FileUploadResult {
      * False for hash-check hits, skipped duplicates, and errors.
      */
     "Transferred": boolean;
+
+    /**
+     * Interrupted is true when a pause or cancel stopped the item before it
+     * finished. It is not a failure: the journal keeps the item pending, so
+     * a resume uploads it again.
+     */
+    "Interrupted": boolean;
 
     /** Creates a new FileUploadResult instance. */
     constructor($$source: Partial<FileUploadResult> = {}) {
@@ -383,6 +501,9 @@ export class FileUploadResult {
         }
         if (!("Transferred" in $$source)) {
             this["Transferred"] = false;
+        }
+        if (!("Interrupted" in $$source)) {
+            this["Interrupted"] = false;
         }
 
         Object.assign(this, $$source);
@@ -600,8 +721,8 @@ export class LivePhotoRepairCandidate {
      * Creates a new LivePhotoRepairCandidate instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePhotoRepairCandidate {
-        const $$createField1_0 = $$createType7;
-        const $$createField2_0 = $$createType7;
+        const $$createField1_0 = $$createType9;
+        const $$createField2_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Photo" in $$parsedSource) {
             $$parsedSource["Photo"] = $$createField1_0($$parsedSource["Photo"]);
@@ -722,7 +843,7 @@ export class LivePhotoRepairProgress {
      * Creates a new LivePhotoRepairProgress instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePhotoRepairProgress {
-        const $$createField7_0 = $$createType9;
+        const $$createField7_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Outcome" in $$parsedSource) {
             $$parsedSource["Outcome"] = $$createField7_0($$parsedSource["Outcome"]);
@@ -771,10 +892,10 @@ export class LivePhotoRepairReport {
      * Creates a new LivePhotoRepairReport instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePhotoRepairReport {
-        const $$createField0_0 = $$createType11;
+        const $$createField0_0 = $$createType13;
         const $$createField1_0 = $$createType3;
-        const $$createField2_0 = $$createType13;
-        const $$createField3_0 = $$createType15;
+        const $$createField2_0 = $$createType15;
+        const $$createField3_0 = $$createType17;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Candidates" in $$parsedSource) {
             $$parsedSource["Candidates"] = $$createField0_0($$parsedSource["Candidates"]);
@@ -819,10 +940,25 @@ export class Preferences {
     "watchFolders": string[];
 
     /**
+     * WatchAlbums gives a watch folder its own album, as "folder|album"
+     * entries (an album name or key). Folders without an entry upload
+     * without an album; a watched upload never uses the album picked for a
+     * dropped batch.
+     */
+    "watchAlbums": string[];
+
+    /**
      * StartWithWindows registers the GUI in the user's autostart registry
      * key (Windows only).
      */
     "startWithWindows": boolean;
+
+    /**
+     * UploadLimitKBps and DownloadLimitKBps cap transfer speed in KB/s for
+     * the whole app; 0 means no limit.
+     */
+    "uploadLimitKBps": number;
+    "downloadLimitKBps": number;
 
     /**
      * AlbumName and AlbumAutoMode are per-session choices and are never persisted.
@@ -877,8 +1013,17 @@ export class Preferences {
         if (!("watchFolders" in $$source)) {
             this["watchFolders"] = [];
         }
+        if (!("watchAlbums" in $$source)) {
+            this["watchAlbums"] = [];
+        }
         if (!("startWithWindows" in $$source)) {
             this["startWithWindows"] = false;
+        }
+        if (!("uploadLimitKBps" in $$source)) {
+            this["uploadLimitKBps"] = 0;
+        }
+        if (!("downloadLimitKBps" in $$source)) {
+            this["downloadLimitKBps"] = 0;
         }
         if (!("albumName" in $$source)) {
             this["albumName"] = "";
@@ -895,9 +1040,13 @@ export class Preferences {
      */
     static createFrom($$source: any = {}): Preferences {
         const $$createField14_0 = $$createType3;
+        const $$createField15_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("watchFolders" in $$parsedSource) {
             $$parsedSource["watchFolders"] = $$createField14_0($$parsedSource["watchFolders"]);
+        }
+        if ("watchAlbums" in $$parsedSource) {
+            $$parsedSource["watchAlbums"] = $$createField15_0($$parsedSource["watchAlbums"]);
         }
         return new Preferences($$parsedSource as Partial<Preferences>);
     }
@@ -933,6 +1082,882 @@ export class PreflightWarning {
             $$parsedSource["Paths"] = $$createField0_0($$parsedSource["Paths"]);
         }
         return new PreflightWarning($$parsedSource as Partial<PreflightWarning>);
+    }
+}
+
+/**
+ * QuotaConversionExclusion is a counted file that is not offered, with why.
+ */
+export class QuotaConversionExclusion {
+    "FileName": string;
+    "MediaKey": string;
+    "Bytes": number;
+    "Reason": string;
+
+    /** Creates a new QuotaConversionExclusion instance. */
+    constructor($$source: Partial<QuotaConversionExclusion> = {}) {
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("Bytes" in $$source)) {
+            this["Bytes"] = 0;
+        }
+        if (!("Reason" in $$source)) {
+            this["Reason"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConversionExclusion instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConversionExclusion {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaConversionExclusion($$parsedSource as Partial<QuotaConversionExclusion>);
+    }
+}
+
+/**
+ * QuotaConversionItem is a counted file with a matching copy on this computer.
+ */
+export class QuotaConversionItem {
+    "MediaKey": string;
+    "DedupKey": string;
+    "FileName": string;
+    "SHA1Hex": string;
+    "SizeBytes": number;
+
+    /**
+     * QuotaBytes is what the file counts against the storage quota.
+     */
+    "QuotaBytes": number;
+    "LocalPath": string;
+
+    /**
+     * Folder is the local copy's folder.
+     */
+    "Folder": string;
+
+    /**
+     * CapturedAt is when the photo was taken, in Unix milliseconds.
+     */
+    "CapturedAt": number;
+
+    /**
+     * Things that are lost when the counted copy is deleted.
+     */
+    "Favorite": boolean;
+    "Archived": boolean;
+    "Edited": boolean;
+
+    /**
+     * StoredCopyOnly is true when Google Photos keeps no original (storage
+     * saver quality): the stored copy is downloaded and re-uploaded as it
+     * is, and cannot be checked against the original's fingerprint.
+     */
+    "StoredCopyOnly": boolean;
+
+    /** Creates a new QuotaConversionItem instance. */
+    constructor($$source: Partial<QuotaConversionItem> = {}) {
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("DedupKey" in $$source)) {
+            this["DedupKey"] = "";
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("SHA1Hex" in $$source)) {
+            this["SHA1Hex"] = "";
+        }
+        if (!("SizeBytes" in $$source)) {
+            this["SizeBytes"] = 0;
+        }
+        if (!("QuotaBytes" in $$source)) {
+            this["QuotaBytes"] = 0;
+        }
+        if (!("LocalPath" in $$source)) {
+            this["LocalPath"] = "";
+        }
+        if (!("Folder" in $$source)) {
+            this["Folder"] = "";
+        }
+        if (!("CapturedAt" in $$source)) {
+            this["CapturedAt"] = 0;
+        }
+        if (!("Favorite" in $$source)) {
+            this["Favorite"] = false;
+        }
+        if (!("Archived" in $$source)) {
+            this["Archived"] = false;
+        }
+        if (!("Edited" in $$source)) {
+            this["Edited"] = false;
+        }
+        if (!("StoredCopyOnly" in $$source)) {
+            this["StoredCopyOnly"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConversionItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConversionItem {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaConversionItem($$parsedSource as Partial<QuotaConversionItem>);
+    }
+}
+
+/**
+ * QuotaConversionReport describes what converting would free.
+ */
+export class QuotaConversionReport {
+    /**
+     * CountedFiles and CountedBytes cover every file that counts against
+     * the quota, each file counted once.
+     */
+    "CountedFiles": number;
+    "CountedBytes": number;
+
+    /**
+     * Convertible files have a matching local copy and none of the
+     * exclusion reasons.
+     */
+    "Convertible": QuotaConversionItem[];
+    "ConvertibleBytes": number;
+
+    /**
+     * NotOnComputer counts files with no matching local copy in the
+     * searched folders.
+     */
+    "NotOnComputer": number;
+    "NotOnComputerBytes": number;
+
+    /**
+     * SameNameDifferent counts the files of NotOnComputer that do have a
+     * local file with the same name, but different content (an edited,
+     * converted or re-saved copy). Examples lists a few of them.
+     */
+    "SameNameDifferent": number;
+    "SameNameDifferentBytes": number;
+    "SameNameExamples": QuotaNameMismatch[];
+
+    /**
+     * SizeMatched is how many local files had the size of a counted file
+     * and were therefore read and compared.
+     */
+    "SizeMatched": number;
+
+    /**
+     * Downloadable files have no copy here but can be downloaded from Google
+     * Photos as the exact original (checked by SHA-1), after which they can
+     * be converted like any other file.
+     */
+    "Downloadable": QuotaConversionItem[];
+    "DownloadableBytes": number;
+
+    /**
+     * NotDownloadable groups the other files without a local copy by why
+     * they cannot be downloaded and converted.
+     */
+    "NotDownloadable": QuotaReasonTotal[];
+
+    /**
+     * Excluded files have a local copy but are not safe to convert.
+     */
+    "Excluded": QuotaConversionExclusion[];
+    "Folders": QuotaFolderTotal[];
+
+    /**
+     * ScannedFiles is how many local files were looked at.
+     */
+    "ScannedFiles": number;
+
+    /** Creates a new QuotaConversionReport instance. */
+    constructor($$source: Partial<QuotaConversionReport> = {}) {
+        if (!("CountedFiles" in $$source)) {
+            this["CountedFiles"] = 0;
+        }
+        if (!("CountedBytes" in $$source)) {
+            this["CountedBytes"] = 0;
+        }
+        if (!("Convertible" in $$source)) {
+            this["Convertible"] = [];
+        }
+        if (!("ConvertibleBytes" in $$source)) {
+            this["ConvertibleBytes"] = 0;
+        }
+        if (!("NotOnComputer" in $$source)) {
+            this["NotOnComputer"] = 0;
+        }
+        if (!("NotOnComputerBytes" in $$source)) {
+            this["NotOnComputerBytes"] = 0;
+        }
+        if (!("SameNameDifferent" in $$source)) {
+            this["SameNameDifferent"] = 0;
+        }
+        if (!("SameNameDifferentBytes" in $$source)) {
+            this["SameNameDifferentBytes"] = 0;
+        }
+        if (!("SameNameExamples" in $$source)) {
+            this["SameNameExamples"] = [];
+        }
+        if (!("SizeMatched" in $$source)) {
+            this["SizeMatched"] = 0;
+        }
+        if (!("Downloadable" in $$source)) {
+            this["Downloadable"] = [];
+        }
+        if (!("DownloadableBytes" in $$source)) {
+            this["DownloadableBytes"] = 0;
+        }
+        if (!("NotDownloadable" in $$source)) {
+            this["NotDownloadable"] = [];
+        }
+        if (!("Excluded" in $$source)) {
+            this["Excluded"] = [];
+        }
+        if (!("Folders" in $$source)) {
+            this["Folders"] = [];
+        }
+        if (!("ScannedFiles" in $$source)) {
+            this["ScannedFiles"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConversionReport instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConversionReport {
+        const $$createField2_0 = $$createType19;
+        const $$createField8_0 = $$createType21;
+        const $$createField10_0 = $$createType19;
+        const $$createField12_0 = $$createType23;
+        const $$createField13_0 = $$createType25;
+        const $$createField14_0 = $$createType27;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Convertible" in $$parsedSource) {
+            $$parsedSource["Convertible"] = $$createField2_0($$parsedSource["Convertible"]);
+        }
+        if ("SameNameExamples" in $$parsedSource) {
+            $$parsedSource["SameNameExamples"] = $$createField8_0($$parsedSource["SameNameExamples"]);
+        }
+        if ("Downloadable" in $$parsedSource) {
+            $$parsedSource["Downloadable"] = $$createField10_0($$parsedSource["Downloadable"]);
+        }
+        if ("NotDownloadable" in $$parsedSource) {
+            $$parsedSource["NotDownloadable"] = $$createField12_0($$parsedSource["NotDownloadable"]);
+        }
+        if ("Excluded" in $$parsedSource) {
+            $$parsedSource["Excluded"] = $$createField13_0($$parsedSource["Excluded"]);
+        }
+        if ("Folders" in $$parsedSource) {
+            $$parsedSource["Folders"] = $$createField14_0($$parsedSource["Folders"]);
+        }
+        return new QuotaConversionReport($$parsedSource as Partial<QuotaConversionReport>);
+    }
+}
+
+/**
+ * QuotaConversionStatus is a recorded conversion with its current state.
+ */
+export class QuotaConversionStatus {
+    "mediaKey": string;
+    "dedupKey": string;
+    "fileName": string;
+    "sha1": string;
+    "localPath": string;
+    "quotaBytes": number;
+
+    /**
+     * DeletedAt is when the counted copy was deleted, in Unix seconds.
+     */
+    "deletedAt": number;
+    "State": string;
+
+    /**
+     * LocalMissing is true when the local copy is gone or changed, so it can
+     * no longer be uploaded.
+     */
+    "LocalMissing": boolean;
+
+    /** Creates a new QuotaConversionStatus instance. */
+    constructor($$source: Partial<QuotaConversionStatus> = {}) {
+        if (!("mediaKey" in $$source)) {
+            this["mediaKey"] = "";
+        }
+        if (!("dedupKey" in $$source)) {
+            this["dedupKey"] = "";
+        }
+        if (!("fileName" in $$source)) {
+            this["fileName"] = "";
+        }
+        if (!("sha1" in $$source)) {
+            this["sha1"] = "";
+        }
+        if (!("localPath" in $$source)) {
+            this["localPath"] = "";
+        }
+        if (!("quotaBytes" in $$source)) {
+            this["quotaBytes"] = 0;
+        }
+        if (!("deletedAt" in $$source)) {
+            this["deletedAt"] = 0;
+        }
+        if (!("State" in $$source)) {
+            this["State"] = "";
+        }
+        if (!("LocalMissing" in $$source)) {
+            this["LocalMissing"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConversionStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConversionStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaConversionStatus($$parsedSource as Partial<QuotaConversionStatus>);
+    }
+}
+
+/**
+ * QuotaConvertAllPlan summarises what "convert all" would do.
+ */
+export class QuotaConvertAllPlan {
+    /**
+     * CountedFiles and CountedBytes cover every file counting now.
+     */
+    "CountedFiles": number;
+    "CountedBytes": number;
+
+    /**
+     * Files and Bytes are what would be converted.
+     */
+    "Files": number;
+    "Bytes": number;
+
+    /**
+     * DownloadBytes is roughly what has to be downloaded (and kept as backup).
+     */
+    "DownloadBytes": number;
+
+    /**
+     * SaverFiles of Files have no original in Google Photos; their stored
+     * copy is downloaded and uploaded again as it is.
+     */
+    "SaverFiles": number;
+
+    /**
+     * LivePhotos are left alone: re-uploading the still alone would lose the
+     * motion.
+     */
+    "LivePhotos": number;
+    "LivePhotoBytes": number;
+
+    /**
+     * Waiting counts earlier conversions deleted but not uploaded yet; they
+     * are uploaded first.
+     */
+    "Waiting": number;
+
+    /**
+     * DefaultFolder is where downloads are kept when no folder was chosen.
+     */
+    "DefaultFolder": string;
+
+    /** Creates a new QuotaConvertAllPlan instance. */
+    constructor($$source: Partial<QuotaConvertAllPlan> = {}) {
+        if (!("CountedFiles" in $$source)) {
+            this["CountedFiles"] = 0;
+        }
+        if (!("CountedBytes" in $$source)) {
+            this["CountedBytes"] = 0;
+        }
+        if (!("Files" in $$source)) {
+            this["Files"] = 0;
+        }
+        if (!("Bytes" in $$source)) {
+            this["Bytes"] = 0;
+        }
+        if (!("DownloadBytes" in $$source)) {
+            this["DownloadBytes"] = 0;
+        }
+        if (!("SaverFiles" in $$source)) {
+            this["SaverFiles"] = 0;
+        }
+        if (!("LivePhotos" in $$source)) {
+            this["LivePhotos"] = 0;
+        }
+        if (!("LivePhotoBytes" in $$source)) {
+            this["LivePhotoBytes"] = 0;
+        }
+        if (!("Waiting" in $$source)) {
+            this["Waiting"] = 0;
+        }
+        if (!("DefaultFolder" in $$source)) {
+            this["DefaultFolder"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConvertAllPlan instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConvertAllPlan {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaConvertAllPlan($$parsedSource as Partial<QuotaConvertAllPlan>);
+    }
+}
+
+/**
+ * QuotaConvertAllResult is what a "convert all" run did.
+ */
+export class QuotaConvertAllResult {
+    "Total": number;
+    "Converted": number;
+
+    /**
+     * Problems lists files that were skipped or failed, with why.
+     */
+    "Problems": QuotaDeleteOutcome[];
+
+    /** Creates a new QuotaConvertAllResult instance. */
+    constructor($$source: Partial<QuotaConvertAllResult> = {}) {
+        if (!("Total" in $$source)) {
+            this["Total"] = 0;
+        }
+        if (!("Converted" in $$source)) {
+            this["Converted"] = 0;
+        }
+        if (!("Problems" in $$source)) {
+            this["Problems"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConvertAllResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConvertAllResult {
+        const $$createField2_0 = $$createType29;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Problems" in $$parsedSource) {
+            $$parsedSource["Problems"] = $$createField2_0($$parsedSource["Problems"]);
+        }
+        return new QuotaConvertAllResult($$parsedSource as Partial<QuotaConvertAllResult>);
+    }
+}
+
+/**
+ * QuotaConvertProgress follows a conversion run: Phase is "deleting" while
+ * counted copies are removed and "uploading" while a batch uploads again.
+ */
+export class QuotaConvertProgress {
+    "Phase": string;
+    "Done": number;
+    "Total": number;
+    "Batch": number;
+    "Batches": number;
+
+    /**
+     * FileName and the byte counts follow the file being downloaded.
+     */
+    "FileName": string;
+    "BytesDone": number;
+    "BytesTotal": number;
+
+    /**
+     * Outcome is set for each file whose counted copy was handled.
+     */
+    "Outcome": QuotaDeleteOutcome | null;
+
+    /** Creates a new QuotaConvertProgress instance. */
+    constructor($$source: Partial<QuotaConvertProgress> = {}) {
+        if (!("Phase" in $$source)) {
+            this["Phase"] = "";
+        }
+        if (!("Done" in $$source)) {
+            this["Done"] = 0;
+        }
+        if (!("Total" in $$source)) {
+            this["Total"] = 0;
+        }
+        if (!("Batch" in $$source)) {
+            this["Batch"] = 0;
+        }
+        if (!("Batches" in $$source)) {
+            this["Batches"] = 0;
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("BytesDone" in $$source)) {
+            this["BytesDone"] = 0;
+        }
+        if (!("BytesTotal" in $$source)) {
+            this["BytesTotal"] = 0;
+        }
+        if (!("Outcome" in $$source)) {
+            this["Outcome"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaConvertProgress instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaConvertProgress {
+        const $$createField8_0 = $$createType30;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Outcome" in $$parsedSource) {
+            $$parsedSource["Outcome"] = $$createField8_0($$parsedSource["Outcome"]);
+        }
+        return new QuotaConvertProgress($$parsedSource as Partial<QuotaConvertProgress>);
+    }
+}
+
+/**
+ * QuotaDeleteOutcome reports one file of RemoveCountedCopies.
+ */
+export class QuotaDeleteOutcome {
+    "MediaKey": string;
+    "FileName": string;
+
+    /**
+     * Status is "deleted", "skipped" or "failed".
+     */
+    "Status": string;
+    "Message": string;
+
+    /** Creates a new QuotaDeleteOutcome instance. */
+    constructor($$source: Partial<QuotaDeleteOutcome> = {}) {
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("Status" in $$source)) {
+            this["Status"] = "";
+        }
+        if (!("Message" in $$source)) {
+            this["Message"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaDeleteOutcome instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaDeleteOutcome {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaDeleteOutcome($$parsedSource as Partial<QuotaDeleteOutcome>);
+    }
+}
+
+/**
+ * QuotaDownloadOutcome reports one file of DownloadCountedOriginals.
+ */
+export class QuotaDownloadOutcome {
+    "MediaKey": string;
+    "FileName": string;
+    "LocalPath": string;
+
+    /**
+     * SHA1Hex is the downloaded file's fingerprint.
+     */
+    "SHA1Hex": string;
+
+    /**
+     * Status is "downloaded", "skipped" or "failed".
+     */
+    "Status": string;
+    "Message": string;
+
+    /** Creates a new QuotaDownloadOutcome instance. */
+    constructor($$source: Partial<QuotaDownloadOutcome> = {}) {
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("LocalPath" in $$source)) {
+            this["LocalPath"] = "";
+        }
+        if (!("SHA1Hex" in $$source)) {
+            this["SHA1Hex"] = "";
+        }
+        if (!("Status" in $$source)) {
+            this["Status"] = "";
+        }
+        if (!("Message" in $$source)) {
+            this["Message"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaDownloadOutcome instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaDownloadOutcome {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaDownloadOutcome($$parsedSource as Partial<QuotaDownloadOutcome>);
+    }
+}
+
+/**
+ * QuotaDownloadProgress follows a download run, one file at a time.
+ */
+export class QuotaDownloadProgress {
+    "Index": number;
+    "Total": number;
+    "FileName": string;
+    "BytesDone": number;
+    "BytesTotal": number;
+
+    /**
+     * DoneBytes is the size of the files finished so far.
+     */
+    "DoneBytes": number;
+    "Outcome": QuotaDownloadOutcome | null;
+
+    /** Creates a new QuotaDownloadProgress instance. */
+    constructor($$source: Partial<QuotaDownloadProgress> = {}) {
+        if (!("Index" in $$source)) {
+            this["Index"] = 0;
+        }
+        if (!("Total" in $$source)) {
+            this["Total"] = 0;
+        }
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("BytesDone" in $$source)) {
+            this["BytesDone"] = 0;
+        }
+        if (!("BytesTotal" in $$source)) {
+            this["BytesTotal"] = 0;
+        }
+        if (!("DoneBytes" in $$source)) {
+            this["DoneBytes"] = 0;
+        }
+        if (!("Outcome" in $$source)) {
+            this["Outcome"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaDownloadProgress instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaDownloadProgress {
+        const $$createField6_0 = $$createType32;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Outcome" in $$parsedSource) {
+            $$parsedSource["Outcome"] = $$createField6_0($$parsedSource["Outcome"]);
+        }
+        return new QuotaDownloadProgress($$parsedSource as Partial<QuotaDownloadProgress>);
+    }
+}
+
+/**
+ * QuotaDownloadResult is what the GUI gets back from a download run: the
+ * outcomes and the report with the downloaded files now convertible.
+ */
+export class QuotaDownloadResult {
+    "Outcomes": QuotaDownloadOutcome[];
+    "Report": QuotaConversionReport;
+
+    /** Creates a new QuotaDownloadResult instance. */
+    constructor($$source: Partial<QuotaDownloadResult> = {}) {
+        if (!("Outcomes" in $$source)) {
+            this["Outcomes"] = [];
+        }
+        if (!("Report" in $$source)) {
+            this["Report"] = (new QuotaConversionReport());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaDownloadResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaDownloadResult {
+        const $$createField0_0 = $$createType33;
+        const $$createField1_0 = $$createType34;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Outcomes" in $$parsedSource) {
+            $$parsedSource["Outcomes"] = $$createField0_0($$parsedSource["Outcomes"]);
+        }
+        if ("Report" in $$parsedSource) {
+            $$parsedSource["Report"] = $$createField1_0($$parsedSource["Report"]);
+        }
+        return new QuotaDownloadResult($$parsedSource as Partial<QuotaDownloadResult>);
+    }
+}
+
+/**
+ * QuotaFolderTotal sums the convertible files of one local folder.
+ */
+export class QuotaFolderTotal {
+    "Folder": string;
+    "Files": number;
+    "Bytes": number;
+
+    /** Creates a new QuotaFolderTotal instance. */
+    constructor($$source: Partial<QuotaFolderTotal> = {}) {
+        if (!("Folder" in $$source)) {
+            this["Folder"] = "";
+        }
+        if (!("Files" in $$source)) {
+            this["Files"] = 0;
+        }
+        if (!("Bytes" in $$source)) {
+            this["Bytes"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaFolderTotal instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaFolderTotal {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaFolderTotal($$parsedSource as Partial<QuotaFolderTotal>);
+    }
+}
+
+/**
+ * QuotaNameMismatch is a counted file whose name exists locally with
+ * different content.
+ */
+export class QuotaNameMismatch {
+    "FileName": string;
+    "LocalPath": string;
+
+    /**
+     * RemoteSize and LocalSize show at a glance that the files differ.
+     */
+    "RemoteSize": number;
+    "LocalSize": number;
+
+    /** Creates a new QuotaNameMismatch instance. */
+    constructor($$source: Partial<QuotaNameMismatch> = {}) {
+        if (!("FileName" in $$source)) {
+            this["FileName"] = "";
+        }
+        if (!("LocalPath" in $$source)) {
+            this["LocalPath"] = "";
+        }
+        if (!("RemoteSize" in $$source)) {
+            this["RemoteSize"] = 0;
+        }
+        if (!("LocalSize" in $$source)) {
+            this["LocalSize"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaNameMismatch instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaNameMismatch {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaNameMismatch($$parsedSource as Partial<QuotaNameMismatch>);
+    }
+}
+
+/**
+ * QuotaReasonTotal counts files left out for one reason.
+ */
+export class QuotaReasonTotal {
+    "Reason": string;
+    "Files": number;
+    "Bytes": number;
+
+    /** Creates a new QuotaReasonTotal instance. */
+    constructor($$source: Partial<QuotaReasonTotal> = {}) {
+        if (!("Reason" in $$source)) {
+            this["Reason"] = "";
+        }
+        if (!("Files" in $$source)) {
+            this["Files"] = 0;
+        }
+        if (!("Bytes" in $$source)) {
+            this["Bytes"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaReasonTotal instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaReasonTotal {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaReasonTotal($$parsedSource as Partial<QuotaReasonTotal>);
+    }
+}
+
+/**
+ * QuotaScanProgress reports a local folder scan.
+ */
+export class QuotaScanProgress {
+    /**
+     * Seen is every media file looked at; Hashed the ones whose size matched
+     * a counted file and were therefore read.
+     */
+    "Seen": number;
+    "Hashed": number;
+    "Matched": number;
+    "Folder": string;
+
+    /** Creates a new QuotaScanProgress instance. */
+    constructor($$source: Partial<QuotaScanProgress> = {}) {
+        if (!("Seen" in $$source)) {
+            this["Seen"] = 0;
+        }
+        if (!("Hashed" in $$source)) {
+            this["Hashed"] = 0;
+        }
+        if (!("Matched" in $$source)) {
+            this["Matched"] = 0;
+        }
+        if (!("Folder" in $$source)) {
+            this["Folder"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new QuotaScanProgress instance from a string or object.
+     */
+    static createFrom($$source: any = {}): QuotaScanProgress {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new QuotaScanProgress($$parsedSource as Partial<QuotaScanProgress>);
     }
 }
 
@@ -1017,6 +2042,70 @@ export class ReleaseAsset {
 }
 
 /**
+ * RemoteAlbum is one album (a library collection) as the library sync
+ * reports it at response path 1.3. Paths follow gpmc's collection parser.
+ */
+export class RemoteAlbum {
+    /**
+     * MediaKey is the album key used to add items (AF1Qip...).
+     */
+    "MediaKey": string;
+    "Title": string;
+
+    /**
+     * ItemCount is the number of items in the album (2.7).
+     */
+    "ItemCount": number;
+
+    /**
+     * Type is the collection type (2.8); its values are not documented.
+     */
+    "Type": number;
+
+    /**
+     * CoverMediaKey names the cover item (2.17.1).
+     */
+    "CoverMediaKey": string;
+
+    /**
+     * LastActivity is the last change, in Unix milliseconds (2.10.10).
+     */
+    "LastActivity": number;
+
+    /** Creates a new RemoteAlbum instance. */
+    constructor($$source: Partial<RemoteAlbum> = {}) {
+        if (!("MediaKey" in $$source)) {
+            this["MediaKey"] = "";
+        }
+        if (!("Title" in $$source)) {
+            this["Title"] = "";
+        }
+        if (!("ItemCount" in $$source)) {
+            this["ItemCount"] = 0;
+        }
+        if (!("Type" in $$source)) {
+            this["Type"] = 0;
+        }
+        if (!("CoverMediaKey" in $$source)) {
+            this["CoverMediaKey"] = "";
+        }
+        if (!("LastActivity" in $$source)) {
+            this["LastActivity"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RemoteAlbum instance from a string or object.
+     */
+    static createFrom($$source: any = {}): RemoteAlbum {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RemoteAlbum($$parsedSource as Partial<RemoteAlbum>);
+    }
+}
+
+/**
  * RemoteMediaItem is one media item as reported by the library sync.
  */
 export class RemoteMediaItem {
@@ -1059,6 +2148,14 @@ export class RemoteMediaItem {
      * or motion photo, reported at item path 5.5.2.4 (micro video).
      */
     "HasMotion"?: boolean;
+
+    /**
+     * Favorite (2.31.1), Archived (2.29.1) and EditedInPhotos (5.2.4, an
+     * edit saved in Google Photos) describe what only exists in the library.
+     */
+    "Favorite"?: boolean;
+    "Archived"?: boolean;
+    "EditedInPhotos"?: boolean;
 
     /** Creates a new RemoteMediaItem instance. */
     constructor($$source: Partial<RemoteMediaItem> = {}) {
@@ -1146,6 +2243,169 @@ export class StartUploadEvent {
             $$parsedSource["files"] = $$createField0_0($$parsedSource["files"]);
         }
         return new StartUploadEvent($$parsedSource as Partial<StartUploadEvent>);
+    }
+}
+
+/**
+ * TakeawayAlbum is one album the takeaway created.
+ */
+export class TakeawayAlbum {
+    "Title": string;
+    "AlbumKey": string;
+    "Count": number;
+
+    /** Creates a new TakeawayAlbum instance. */
+    constructor($$source: Partial<TakeawayAlbum> = {}) {
+        if (!("Title" in $$source)) {
+            this["Title"] = "";
+        }
+        if (!("AlbumKey" in $$source)) {
+            this["AlbumKey"] = "";
+        }
+        if (!("Count" in $$source)) {
+            this["Count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TakeawayAlbum instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TakeawayAlbum {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TakeawayAlbum($$parsedSource as Partial<TakeawayAlbum>);
+    }
+}
+
+/**
+ * TakeawayPlan is what a takeaway would gather, without doing anything.
+ */
+export class TakeawayPlan {
+    /**
+     * Items is how many of the account's own items would be gathered.
+     */
+    "Items": number;
+
+    /**
+     * Albums is how many albums that would make at the given album size.
+     */
+    "Albums": number;
+
+    /**
+     * Skipped counts items left out (trashed, shared, partner, duplicates).
+     */
+    "Skipped": number;
+
+    /** Creates a new TakeawayPlan instance. */
+    constructor($$source: Partial<TakeawayPlan> = {}) {
+        if (!("Items" in $$source)) {
+            this["Items"] = 0;
+        }
+        if (!("Albums" in $$source)) {
+            this["Albums"] = 0;
+        }
+        if (!("Skipped" in $$source)) {
+            this["Skipped"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TakeawayPlan instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TakeawayPlan {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TakeawayPlan($$parsedSource as Partial<TakeawayPlan>);
+    }
+}
+
+/**
+ * TakeawayProgress follows a running takeaway.
+ */
+export class TakeawayProgress {
+    /**
+     * Album is the 1-based album being filled, of AlbumTotal.
+     */
+    "Album": number;
+    "AlbumTotal": number;
+    "AlbumTitle": string;
+
+    /**
+     * Done and Total count items across the whole run.
+     */
+    "Done": number;
+    "Total": number;
+
+    /** Creates a new TakeawayProgress instance. */
+    constructor($$source: Partial<TakeawayProgress> = {}) {
+        if (!("Album" in $$source)) {
+            this["Album"] = 0;
+        }
+        if (!("AlbumTotal" in $$source)) {
+            this["AlbumTotal"] = 0;
+        }
+        if (!("AlbumTitle" in $$source)) {
+            this["AlbumTitle"] = "";
+        }
+        if (!("Done" in $$source)) {
+            this["Done"] = 0;
+        }
+        if (!("Total" in $$source)) {
+            this["Total"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TakeawayProgress instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TakeawayProgress {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TakeawayProgress($$parsedSource as Partial<TakeawayProgress>);
+    }
+}
+
+/**
+ * TakeawayResult is the outcome of a takeaway.
+ */
+export class TakeawayResult {
+    "Albums": TakeawayAlbum[];
+    "Items": number;
+
+    /**
+     * Stopped is true when the run was cancelled before it finished; the
+     * albums already made are still listed.
+     */
+    "Stopped": boolean;
+
+    /** Creates a new TakeawayResult instance. */
+    constructor($$source: Partial<TakeawayResult> = {}) {
+        if (!("Albums" in $$source)) {
+            this["Albums"] = [];
+        }
+        if (!("Items" in $$source)) {
+            this["Items"] = 0;
+        }
+        if (!("Stopped" in $$source)) {
+            this["Stopped"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TakeawayResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TakeawayResult {
+        const $$createField0_0 = $$createType36;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Albums" in $$parsedSource) {
+            $$parsedSource["Albums"] = $$createField0_0($$parsedSource["Albums"]);
+        }
+        return new TakeawayResult($$parsedSource as Partial<TakeawayResult>);
     }
 }
 
@@ -1278,7 +2538,7 @@ export class UpdateInfo {
      * Creates a new UpdateInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): UpdateInfo {
-        const $$createField8_0 = $$createType17;
+        const $$createField8_0 = $$createType38;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("Assets" in $$parsedSource) {
             $$parsedSource["Assets"] = $$createField8_0($$parsedSource["Assets"]);
@@ -1309,6 +2569,34 @@ export class UploadBatchStart {
     static createFrom($$source: any = {}): UploadBatchStart {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new UploadBatchStart($$parsedSource as Partial<UploadBatchStart>);
+    }
+}
+
+/**
+ * UploadFailure is one file that failed, with the reason in plain words.
+ */
+export class UploadFailure {
+    "Path": string;
+    "Message": string;
+
+    /** Creates a new UploadFailure instance. */
+    constructor($$source: Partial<UploadFailure> = {}) {
+        if (!("Path" in $$source)) {
+            this["Path"] = "";
+        }
+        if (!("Message" in $$source)) {
+            this["Message"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UploadFailure instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UploadFailure {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UploadFailure($$parsedSource as Partial<UploadFailure>);
     }
 }
 
@@ -1365,6 +2653,92 @@ export class UploadJournalSummary {
     static createFrom($$source: any = {}): UploadJournalSummary {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new UploadJournalSummary($$parsedSource as Partial<UploadJournalSummary>);
+    }
+}
+
+/**
+ * UploadRun is one finished upload run in the history the Activity page
+ * shows: what went up, where, and what failed and why.
+ */
+export class UploadRun {
+    /**
+     * StartedAt and FinishedAt are Unix milliseconds.
+     */
+    "StartedAt": number;
+    "FinishedAt": number;
+    "Uploaded": number;
+    "Skipped": number;
+    "Failed": number;
+
+    /**
+     * Stopped counts files a pause or cancel left for later.
+     */
+    "Stopped": number;
+    "Bytes": number;
+
+    /**
+     * Album is the album name or key the run added to; empty for none.
+     * AlbumAuto is set when every folder became its own album.
+     */
+    "Album": string;
+    "AlbumAuto": boolean;
+
+    /**
+     * AlbumError is set when the files uploaded but did not reach the album.
+     */
+    "AlbumError"?: string;
+
+    /**
+     * Failures lists the failed files (at most uploadHistoryFailures).
+     */
+    "Failures": UploadFailure[];
+
+    /** Creates a new UploadRun instance. */
+    constructor($$source: Partial<UploadRun> = {}) {
+        if (!("StartedAt" in $$source)) {
+            this["StartedAt"] = 0;
+        }
+        if (!("FinishedAt" in $$source)) {
+            this["FinishedAt"] = 0;
+        }
+        if (!("Uploaded" in $$source)) {
+            this["Uploaded"] = 0;
+        }
+        if (!("Skipped" in $$source)) {
+            this["Skipped"] = 0;
+        }
+        if (!("Failed" in $$source)) {
+            this["Failed"] = 0;
+        }
+        if (!("Stopped" in $$source)) {
+            this["Stopped"] = 0;
+        }
+        if (!("Bytes" in $$source)) {
+            this["Bytes"] = 0;
+        }
+        if (!("Album" in $$source)) {
+            this["Album"] = "";
+        }
+        if (!("AlbumAuto" in $$source)) {
+            this["AlbumAuto"] = false;
+        }
+        if (!("Failures" in $$source)) {
+            this["Failures"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UploadRun instance from a string or object.
+     */
+    static createFrom($$source: any = {}): UploadRun {
+        const $$createField10_0 = $$createType40;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("Failures" in $$parsedSource) {
+            $$parsedSource["Failures"] = $$createField10_0($$parsedSource["Failures"]);
+        }
+        return new UploadRun($$parsedSource as Partial<UploadRun>);
     }
 }
 
@@ -1435,7 +2809,7 @@ export class UploadStats {
      * Creates a new UploadStats instance from a string or object.
      */
     static createFrom($$source: any = {}): UploadStats {
-        const $$createField9_0 = $$createType18;
+        const $$createField9_0 = $$createType41;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("daily" in $$parsedSource) {
             $$parsedSource["daily"] = $$createField9_0($$parsedSource["daily"]);
@@ -1473,18 +2847,41 @@ const $$createType0 = QuotaSummary.createFrom;
 const $$createType1 = AccountSummary.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = $Create.Array($Create.Any);
-const $$createType4 = BinItem.createFrom;
+const $$createType4 = RemoteAlbum.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = RemoteMediaItem.createFrom;
-const $$createType7 = $Create.Nullable($$createType6);
-const $$createType8 = LivePhotoRepairOutcome.createFrom;
+const $$createType6 = BinItem.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = RemoteMediaItem.createFrom;
 const $$createType9 = $Create.Nullable($$createType8);
-const $$createType10 = LivePhotoRepairCandidate.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = LivePhotoExclusion.createFrom;
+const $$createType10 = LivePhotoRepairOutcome.createFrom;
+const $$createType11 = $Create.Nullable($$createType10);
+const $$createType12 = LivePhotoRepairCandidate.createFrom;
 const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = LivePhotoAlreadyRepaired.createFrom;
+const $$createType14 = LivePhotoExclusion.createFrom;
 const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = ReleaseAsset.createFrom;
+const $$createType16 = LivePhotoAlreadyRepaired.createFrom;
 const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = $Create.Map($Create.Any, $Create.Any);
+const $$createType18 = QuotaConversionItem.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = QuotaNameMismatch.createFrom;
+const $$createType21 = $Create.Array($$createType20);
+const $$createType22 = QuotaReasonTotal.createFrom;
+const $$createType23 = $Create.Array($$createType22);
+const $$createType24 = QuotaConversionExclusion.createFrom;
+const $$createType25 = $Create.Array($$createType24);
+const $$createType26 = QuotaFolderTotal.createFrom;
+const $$createType27 = $Create.Array($$createType26);
+const $$createType28 = QuotaDeleteOutcome.createFrom;
+const $$createType29 = $Create.Array($$createType28);
+const $$createType30 = $Create.Nullable($$createType28);
+const $$createType31 = QuotaDownloadOutcome.createFrom;
+const $$createType32 = $Create.Nullable($$createType31);
+const $$createType33 = $Create.Array($$createType31);
+const $$createType34 = QuotaConversionReport.createFrom;
+const $$createType35 = TakeawayAlbum.createFrom;
+const $$createType36 = $Create.Array($$createType35);
+const $$createType37 = ReleaseAsset.createFrom;
+const $$createType38 = $Create.Array($$createType37);
+const $$createType39 = UploadFailure.createFrom;
+const $$createType40 = $Create.Array($$createType39);
+const $$createType41 = $Create.Map($Create.Any, $Create.Any);

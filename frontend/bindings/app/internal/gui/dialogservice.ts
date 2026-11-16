@@ -17,10 +17,26 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as application$0 from "../../../github.com/wailsapp/wails/v3/pkg/application/models.js";
 
 /**
+ * PickDownloadFolder opens a directory picker for where downloaded originals
+ * are saved.
+ */
+export function PickDownloadFolder(): $CancellablePromise<string> {
+    return $Call.ByID(1019685056);
+}
+
+/**
  * PickFolder opens a native directory picker and returns the chosen folder.
  */
 export function PickFolder(): $CancellablePromise<string> {
     return $Call.ByID(3998073592);
+}
+
+/**
+ * PickPhotosFolder opens a directory picker for a folder that holds original
+ * photos and videos (used to find local copies of counted files).
+ */
+export function PickPhotosFolder(): $CancellablePromise<string> {
+    return $Call.ByID(1053886473);
 }
 
 export function SetApp(app: application$0.App | null): $CancellablePromise<void> {

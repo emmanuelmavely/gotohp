@@ -34,6 +34,7 @@ func newUploadCommand() *cobra.Command {
 	f.Bool("saver", false, "upload in storage saver quality")
 	f.BoolP("recursive", "r", false, "include subdirectories")
 	f.IntP("threads", "t", core.DefaultPreferences.UploadThreads, "number of upload threads")
+	f.String("limit-rate", "", "cap the total upload speed, e.g. 500K or 2M (per second)")
 	f.BoolP("force", "f", false, "upload even if the file already exists in the library")
 	f.BoolP("delete", "d", false, "delete from host after upload")
 	f.Bool("disable-filter", false, "disable file type filtering")
@@ -91,6 +92,12 @@ func runUploadCommand(cmd *cobra.Command, paths []string) error {
 	if err := validateUploadOptions(f, opts); err != nil {
 		return err
 	}
+	limitText, _ := f.GetString("limit-rate")
+	limit, err := core.ParseRate(limitText)
+	if err != nil {
+		return err
+	}
+	core.UploadLimiter.SetRate(limit)
 
 	logLevel, _ := f.GetString("log-level")
 	noTUI, _ := f.GetBool("no-tui")

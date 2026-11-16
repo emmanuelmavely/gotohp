@@ -298,9 +298,10 @@ func (a *Api) downloadToFile(ctx context.Context, url, destPath string, onProgre
 	}
 	defer func() { _ = out.Close() }()
 
-	var body io.Reader = resp.Body
+	// Paced by the download speed limit.
+	var body = NewLimitedReader(ctx, resp.Body, DownloadLimiter)
 	if onProgress != nil {
-		body = &downloadProgress{reader: resp.Body, total: resp.ContentLength, onProgress: onProgress}
+		body = &downloadProgress{reader: body, total: resp.ContentLength, onProgress: onProgress}
 	}
 	if _, err := io.Copy(out, body); err != nil {
 		return fmt.Errorf("failed to download file: %w", err)

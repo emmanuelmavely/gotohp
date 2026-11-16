@@ -65,6 +65,27 @@ type RemoteMediaItem struct {
 	// HasMotion is true for a photo stored with a motion part: a Live Photo
 	// or motion photo, reported at item path 5.5.2.4 (micro video).
 	HasMotion bool `json:",omitempty"`
+	// Favorite (2.31.1), Archived (2.29.1) and EditedInPhotos (5.2.4, an
+	// edit saved in Google Photos) describe what only exists in the library.
+	Favorite       bool `json:",omitempty"`
+	Archived       bool `json:",omitempty"`
+	EditedInPhotos bool `json:",omitempty"`
+}
+
+// RemoteAlbum is one album (a library collection) as the library sync
+// reports it at response path 1.3. Paths follow gpmc's collection parser.
+type RemoteAlbum struct {
+	// MediaKey is the album key used to add items (AF1Qip...).
+	MediaKey string
+	Title    string
+	// ItemCount is the number of items in the album (2.7).
+	ItemCount int64
+	// Type is the collection type (2.8); its values are not documented.
+	Type int64
+	// CoverMediaKey names the cover item (2.17.1).
+	CoverMediaKey string
+	// LastActivity is the last change, in Unix milliseconds (2.10.10).
+	LastActivity int64
 }
 
 // LibrarySyncPage is one parsed library sync response.
@@ -78,6 +99,10 @@ type LibrarySyncPage struct {
 	// Deletions lists media keys that were deleted remotely since the last
 	// sync cycle.
 	Deletions []string
+	// Albums lists albums that are new or changed; AlbumDeletions the keys
+	// of albums that were deleted.
+	Albums         []*RemoteAlbum
+	AlbumDeletions []string
 }
 
 // postLibrarySync sends a request body to the library sync endpoint.
@@ -161,9 +186,86 @@ func parseLibrarySyncResponse(body []byte) (*LibrarySyncPage, error) {
 	for _, pbDeletion := range pbResp.GetField1().GetDeletions() {
 		if key := pbDeletion.GetField1().GetField2().GetField1(); key != "" {
 			page.Deletions = append(page.Deletions, key)
+			continue
+		}
+		// Deletion type 4 is a collection (album), keyed at 1.5.2.
+		if deletion := pbDeletion.GetField1(); deletion != nil && deletion.GetField1() == 4 {
+			if key := protoStringAt(deletion.ProtoReflect().GetUnknown(), 5, 2); key != "" {
+				page.AlbumDeletions = append(page.AlbumDeletions, key)
+			}
+		}
+	}
+	// Collections (albums) are at 1.3, outside the modeled schema.
+	if field1 := pbResp.GetField1(); field1 != nil {
+		for _, raw := range protoRepeatedBytes(field1.ProtoReflect().GetUnknown(), 3) {
+			if album := parseRemoteAlbum(raw); album != nil {
+				page.Albums = append(page.Albums, album)
+			}
 		}
 	}
 	return page, nil
+}
+
+// parseRemoteAlbum reads one collection entry; nil when it has no key.
+func parseRemoteAlbum(raw []byte) *RemoteAlbum {
+	key := protoStringAt(raw, 1)
+	if key == "" {
+		return nil
+	}
+	return &RemoteAlbum{
+		MediaKey:      key,
+		Title:         protoStringAt(raw, 2, 5),
+		ItemCount:     int64(protoVarintAt(raw, 2, 7)),
+		Type:          int64(protoVarintAt(raw, 2, 8)),
+		CoverMediaKey: protoStringAt(raw, 2, 17, 1),
+		LastActivity:  int64(protoVarintAt(raw, 2, 10, 10)),
+	}
+}
+
+// protoRepeatedBytes returns every length-delimited value of field num.
+func protoRepeatedBytes(data []byte, num protowire.Number) [][]byte {
+	var values [][]byte
+	for len(data) > 0 {
+		fieldNum, wireType, tagLen := protowire.ConsumeTag(data)
+		if tagLen < 0 {
+			return values
+		}
+		data = data[tagLen:]
+		if wireType == protowire.BytesType {
+			value, n := protowire.ConsumeBytes(data)
+			if n < 0 {
+				return values
+			}
+			if fieldNum == num {
+				values = append(values, value)
+			}
+			data = data[n:]
+			continue
+		}
+		n := protowire.ConsumeFieldValue(fieldNum, wireType, data)
+		if n < 0 {
+			return values
+		}
+		data = data[n:]
+	}
+	return values
+}
+
+// protoStringAt returns the length-delimited value at the given path as a
+// string, or "" when it is absent.
+func protoStringAt(data []byte, path ...protowire.Number) string {
+	if len(path) == 0 {
+		return ""
+	}
+	for _, value := range protoRepeatedBytes(data, path[0]) {
+		if len(path) == 1 {
+			return string(value)
+		}
+		if found := protoStringAt(value, path[1:]...); found != "" {
+			return found
+		}
+	}
+	return ""
 }
 
 // parseRemoteMediaItem converts one protobuf media item. Paths not modeled in
@@ -196,7 +298,49 @@ func parseRemoteMediaItem(pbItem *generated.LibrarySyncResponseMediaItemType) *R
 	}
 	item.DedupKey = deriveDedupKey(field2, item.MediaKey)
 	item.HasMotion = hasMicroVideo(pbItem.GetField5())
+	field2Unknown := field2.ProtoReflect().GetUnknown()
+	item.Favorite = protoVarintAt(field2Unknown, 31, 1) == 1
+	item.Archived = protoVarintAt(field2Unknown, 29, 1) == 1
+	if field5 := pbItem.GetField5(); field5 != nil {
+		item.EditedInPhotos = hasProtoPath(field5.ProtoReflect().GetUnknown(), 2, 4)
+	}
 	return item
+}
+
+// protoVarintAt returns the varint at the given path of field numbers (all
+// but the last are nested messages), or 0 when it is absent.
+func protoVarintAt(data []byte, path ...protowire.Number) uint64 {
+	for len(data) > 0 && len(path) > 0 {
+		num, wireType, tagLen := protowire.ConsumeTag(data)
+		if tagLen < 0 {
+			return 0
+		}
+		data = data[tagLen:]
+		switch {
+		case num == path[0] && len(path) == 1 && wireType == protowire.VarintType:
+			value, n := protowire.ConsumeVarint(data)
+			if n < 0 {
+				return 0
+			}
+			return value
+		case num == path[0] && len(path) > 1 && wireType == protowire.BytesType:
+			value, n := protowire.ConsumeBytes(data)
+			if n < 0 {
+				return 0
+			}
+			if found := protoVarintAt(value, path[1:]...); found != 0 {
+				return found
+			}
+			data = data[n:]
+		default:
+			n := protowire.ConsumeFieldValue(num, wireType, data)
+			if n < 0 {
+				return 0
+			}
+			data = data[n:]
+		}
+	}
+	return 0
 }
 
 // hasMicroVideo reports whether the item's type container (path 5) carries
@@ -355,6 +499,16 @@ func (a *Api) SyncLibraryWithStats() (items []*RemoteMediaItem, deletions []stri
 // the running totals after every fetched page. onPage may be nil. The server
 // does not announce the library size up front, so there is no percentage.
 func (a *Api) SyncLibraryWithProgress(onPage func(LibrarySyncStats)) (items []*RemoteMediaItem, deletions []string, syncToken string, stats LibrarySyncStats, err error) {
+	library, syncToken, stats, err := a.syncLibraryAccumulated(onPage)
+	if err != nil {
+		return nil, nil, "", stats, err
+	}
+	return library.items(), library.deletions, syncToken, stats, nil
+}
+
+// syncLibraryAccumulated walks the whole library and returns the merged
+// result, albums included.
+func (a *Api) syncLibraryAccumulated(onPage func(LibrarySyncStats)) (library *libraryAccumulator, syncToken string, stats LibrarySyncStats, err error) {
 	report := func(library *libraryAccumulator) {
 		stats.Items = len(library.byKey)
 		stats.TotalBytes = library.totalBytes
@@ -369,9 +523,9 @@ func (a *Api) SyncLibraryWithProgress(onPage func(LibrarySyncStats)) (items []*R
 
 	state, err := a.GetLibraryState("")
 	if err != nil {
-		return nil, nil, "", stats, fmt.Errorf("failed to get library state: %w", err)
+		return nil, "", stats, fmt.Errorf("failed to get library state: %w", err)
 	}
-	library := newLibraryAccumulator()
+	library = newLibraryAccumulator()
 	library.apply(state)
 	syncToken = state.SyncToken
 	stats.Pages = 1
@@ -384,23 +538,22 @@ func (a *Api) SyncLibraryWithProgress(onPage func(LibrarySyncStats)) (items []*R
 	resumeToken := state.ResumeToken
 	for resumeToken != "" {
 		if stats.Pages > 10000 {
-			return nil, nil, "", stats, fmt.Errorf("library sync did not terminate: too many pages")
+			return nil, "", stats, fmt.Errorf("library sync did not terminate: too many pages")
 		}
 		page, err := a.GetLibraryPageInit(resumeToken)
 		if err != nil {
-			return nil, nil, "", stats, fmt.Errorf("failed to get library page %d: %w", stats.Pages+1, err)
+			return nil, "", stats, fmt.Errorf("failed to get library page %d: %w", stats.Pages+1, err)
 		}
 		library.apply(page)
 		stats.Pages++
 		report(library)
 		if page.ResumeToken == resumeToken {
-			return nil, nil, "", stats, fmt.Errorf("library sync did not advance: resume token repeated on page %d", stats.Pages)
+			return nil, "", stats, fmt.Errorf("library sync did not advance: resume token repeated on page %d", stats.Pages)
 		}
 		resumeToken = page.ResumeToken
 	}
 
-	items = library.items()
-	return items, library.deletions, syncToken, stats, nil
+	return library, syncToken, stats, nil
 }
 
 // libraryAccumulator merges sync pages the way a local cache would: a media
@@ -410,6 +563,10 @@ type libraryAccumulator struct {
 	order     []string
 	byKey     map[string]*RemoteMediaItem
 	deletions []string
+
+	// Albums by key, in first-seen order.
+	albumOrder []string
+	albums     map[string]*RemoteAlbum
 
 	// Running totals over byKey, kept exact as items are replaced or deleted.
 	totalBytes   int64
@@ -427,6 +584,7 @@ func newLibraryAccumulator() *libraryAccumulator {
 	return &libraryAccumulator{
 		byKey:         make(map[string]*RemoteMediaItem),
 		chargedCopies: make(map[string]int),
+		albums:        make(map[string]*RemoteAlbum),
 	}
 }
 
@@ -447,6 +605,36 @@ func (l *libraryAccumulator) apply(page *LibrarySyncPage) {
 		}
 	}
 	l.deletions = append(l.deletions, page.Deletions...)
+	for _, album := range page.Albums {
+		if _, seen := l.albums[album.MediaKey]; !seen {
+			l.albumOrder = append(l.albumOrder, album.MediaKey)
+		}
+		l.albums[album.MediaKey] = album
+	}
+	for _, key := range page.AlbumDeletions {
+		delete(l.albums, key)
+	}
+}
+
+// addAlbum seeds a cached album.
+func (l *libraryAccumulator) addAlbum(album *RemoteAlbum) {
+	if _, seen := l.albums[album.MediaKey]; !seen {
+		l.albumOrder = append(l.albumOrder, album.MediaKey)
+	}
+	l.albums[album.MediaKey] = album
+}
+
+// albumList returns the surviving albums in first-seen order.
+func (l *libraryAccumulator) albumList() []*RemoteAlbum {
+	albums := make([]*RemoteAlbum, 0, len(l.albums))
+	seen := map[string]bool{}
+	for _, key := range l.albumOrder {
+		if album, ok := l.albums[key]; ok && !seen[key] {
+			seen[key] = true
+			albums = append(albums, album)
+		}
+	}
+	return albums
 }
 
 // count adds (sign 1) or removes (sign -1) one item from the running totals.

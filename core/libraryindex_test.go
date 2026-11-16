@@ -109,8 +109,9 @@ func TestSyncLibraryIncrementalAppliesDelta(t *testing.T) {
 
 	// The cached library: K1 (100 bytes, charged) and K3 (70 bytes, charged).
 	cached := &LibraryIndex{
-		Version:   LibraryIndexVersion,
-		SyncToken: "TOKEN_OLD",
+		Version:     LibraryIndexVersion,
+		SyncToken:   "TOKEN_OLD",
+		AlbumsKnown: true,
 		Items: []*RemoteMediaItem{
 			{MediaKey: "K1", FileName: "a.jpg", SizeBytes: 100, QuotaChargedBytes: 100, IsCanonical: true},
 			{MediaKey: "K3", FileName: "c.jpg", SizeBytes: 70, QuotaChargedBytes: 70, IsCanonical: true},
@@ -189,7 +190,7 @@ func TestSyncLibraryIncrementalFallbackToFull(t *testing.T) {
 	restoreConfigGlobals(t)
 	ConfigPath = filepath.Join(t.TempDir(), "gotohp.config")
 
-	cached := &LibraryIndex{Version: LibraryIndexVersion, SyncToken: "STALE",
+	cached := &LibraryIndex{Version: LibraryIndexVersion, SyncToken: "STALE", AlbumsKnown: true,
 		Items: []*RemoteMediaItem{{MediaKey: "K1", SizeBytes: 100, QuotaChargedBytes: 100}}}
 
 	requests := 0
