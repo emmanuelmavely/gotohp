@@ -16,13 +16,6 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify release token
-        if: ${{ !secrets.RELEASE_PLEASE_TOKEN }}
-        run: |
-          echo "::error::RELEASE_PLEASE_TOKEN must be configured as a repository secret."
-          echo "The default GITHUB_TOKEN is not allowed to create pull requests in this repository."
-          exit 1
-
       - uses: googleapis/release-please-action@v5
         id: release-please
         with:
